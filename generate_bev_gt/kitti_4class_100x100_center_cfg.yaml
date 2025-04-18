@@ -1,16 +1,19 @@
 # input: "/mnt/ssd1/SARA/semantic_kitti/dataset"
-input: "/data/joonl4/racer/KITTI/dataset/"
+# input: "/data/joonl4/racer/KITTI/dataset/"
+input: "/workspace/data/kitti/dataset_demo"
 output: "semantic_kitti_4class_100x100.fixed"
 
 type: costmap
-
-sequence_length: 71
-stride: 2
+# sequence_length: 71
+# stride: 2
+sequence_length: 31
+stride: 4
 
 
 split: # sequence numbers
-  train: ["00","01","02","03","04","05","06", "07", "09", "10"]
-  valid: ["08"]
+  #train: ["0","01","02","03","04","05","06", "07", "09", "10"]
+  train: ["00"]
+  valid: ["01"]
 
 
 costmap:

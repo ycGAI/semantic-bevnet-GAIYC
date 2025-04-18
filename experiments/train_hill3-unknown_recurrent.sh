@@ -17,8 +17,7 @@ else
     out_dir="${model_config%.*}-logs"
 fi
 
-
-python ../bevnet/train_recurrent.py \
+python ../bevnet/train.py \
     --model_config="$model_config" \
     --dataset_config="../dataset_configs/hill3_100x100_unknown_recurrent.yaml" \
     --dataset_path="../data/hill-3-clean_4class_100x100/" \

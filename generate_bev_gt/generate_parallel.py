@@ -196,7 +196,7 @@ def gen_voxel_costmap(kwargs, mem_frac):
 if __name__ == '__main__':
     def run():
         start_time = time.time()
-
+        import ipdb;ipdb.set_trace()
         parser = argparse.ArgumentParser("./generate_parallel.py")
 
         parser.add_argument(

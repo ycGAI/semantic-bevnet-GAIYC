@@ -18,10 +18,21 @@ else
 fi
 
 
+# python ../bevnet/train_single.py \
+#     --model_config="$model_config" \
+#     --dataset_config="../dataset_configs/kitti4_100x100_unknown_single.yaml" \
+#     --dataset_path="../data/semantic_kitti_4class_100x100/" \
+#     --output="$out_dir" \
+#     --batch_size=4 \
+#     --include_unknown \
+#     --log_interval=50 \
+#     "${@:3}" 
+
+
 python ../bevnet/train_single.py \
     --model_config="$model_config" \
     --dataset_config="../dataset_configs/kitti4_100x100_unknown_single.yaml" \
-    --dataset_path="../data/semantic_kitti_4class_100x100/" \
+    --dataset_path="/workspace/bevnet/data/semantic_kitti_4class_100x100.fixed/sequences" \
     --output="$out_dir" \
     --batch_size=4 \
     --include_unknown \
