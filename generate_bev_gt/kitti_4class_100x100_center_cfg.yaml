@@ -1,5 +1,5 @@
 # input: "/mnt/ssd1/SARA/semantic_kitti/dataset"
-input: "/data/joonl4/racer/KITTI/dataset/"
+input: "/workspace/data/dataset_demo"
 output: "semantic_kitti_4class_100x100.fixed"
 
 type: costmap
