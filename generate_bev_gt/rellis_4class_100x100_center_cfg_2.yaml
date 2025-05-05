@@ -1,4 +1,4 @@
-input: "/home/xiangyun/aristotle/datasets/rellis-updated/"
+input: "/workspace/data/rellis_3d/dataset"
 # input: "/mnt/ssd1/SARA/Rellis-3D"
 output: "rellis_4class_100x100_2"
 
@@ -11,9 +11,9 @@ stride: 5
 split: # sequence numbers
   train:
     - "00000"
-    - "00001"
-    - "00002"
-    - "00003"
+    # - "00001"
+    # - "00002"
+    # - "00003"
   valid:
     - "00004"
 
@@ -88,3 +88,4 @@ color_map:  # BGR
   # 19: [0, 122, 255]
   19: [255, 0, 0]
   12: [0, 0, 255]
+#python ./generate_bev_gt/generate_parallel.py -c ./generate_bev_gt/rellis_4class_100x100_center_cfg_2.yaml --n_work 1 --devices cuda:0 --mem_frac 0.8

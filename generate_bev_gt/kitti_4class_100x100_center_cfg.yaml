@@ -1,6 +1,6 @@
 # input: "/mnt/ssd1/SARA/semantic_kitti/dataset"
-input: "/workspace/data/dataset_demo"
-output: "semantic_kitti_4class_100x100.fixed"
+input: "/workspace/data/dataset"
+output: "/workspace/data/semantic_kitti_4class_100x100.fixed"
 
 type: costmap
 
@@ -98,3 +98,4 @@ color_map:  # BGR
   72: [0, 255, 255]
   70: [255, 0, 0]
   10: [0, 0, 255]
+#python ./generate_bev_gt/generate_parallel.py -c ./generate_bev_gt/kitti_4class_100x100_center_cfg.yaml --n_worker 1 --devices cuda:0  --mem_frac 0.8
