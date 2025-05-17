@@ -171,11 +171,11 @@ def gen_costmap(kwargs, mem_frac):
     key_scan_id = len(history) // 2
     key_scan = history[key_scan_id]
 
-    new_history = remove_moving_objects(history,
-                                        cfg["moving_classes"],
-                                        key_scan_id)
+    # new_history = remove_moving_objects(history,
+    #                                     cfg["moving_classes"],
+    #                                     key_scan_id)
     #临时
-    #new_history = history
+    new_history = history
     cat_points, cat_labels, pc_ids = join_pointclouds(new_history, key_scan["pose"])
 
     # Create costmap
@@ -365,11 +365,11 @@ def gen_voxel_costmap(kwargs, mem_frac):
     key_scan_id = len(history) // 2
     key_scan = history[key_scan_id]
 
-    new_history = remove_moving_objects(history,
-                                        cfg["moving_classes"],
-                                        key_scan_id)
+    # new_history = remove_moving_objects(history,
+    #                                     cfg["moving_classes"],
+    #                                     key_scan_id)
     #临时
-    #new_history = history
+    new_history = history
     cat_points, cat_labels, pc_ids = join_pointclouds(new_history, key_scan["pose"])
 
     # Create costmap

@@ -75,6 +75,29 @@ def map_labels(labels, learning_map):
         else:
             new_labels[labels == cls] = learning_map[cls]
     return new_labels
+# def map_labels(labels, learning_map, default_label=0):
+#     labels = np.bitwise_and(labels, 0xFFFF)
+    
+#     # 打印原始标签的唯一值及其计数
+#     unique_labels, counts = np.unique(labels, return_counts=True)
+#     print(f"Original labels distribution: {dict(zip(unique_labels, counts))}")
+    
+#     # 检查映射覆盖率
+#     mapped_labels = [l for l in unique_labels if l in learning_map]
+#     unmapped_labels = [l for l in unique_labels if l not in learning_map]
+    
+#     print(f"Mapped labels: {mapped_labels}")
+#     print(f"Unmapped labels: {unmapped_labels}")
+    
+#     # 使用默认标签创建新的标签数组
+#     new_labels = np.full_like(labels, default_label)
+    
+#     # 应用映射
+#     for cls in unique_labels:
+#         if cls in learning_map:
+#             new_labels[labels == cls] = learning_map[cls]
+    
+#     return new_labels
 
 
 def join_pointclouds(history, key_pose):
@@ -101,6 +124,47 @@ def join_pointclouds(history, key_pose):
         start = end
 
     return concated_points.reshape((-1, 4)), concated_labels, pc_ids
+# def join_pointclouds(history, key_pose):
+#     # 为所有点准备单个numpy数组，可以一次性写入
+#     total_points = 0
+#     for past in history:
+#         total_points += past["points"].shape[0]
+    
+#     concated_points = np.zeros(total_points * 4, dtype=np.float32)
+#     concated_labels = np.zeros(total_points, dtype=np.uint32)
+#     pc_ids = np.zeros(total_points, dtype=np.int32)
+
+#     start = 0
+#     key_pose_inv = inv(key_pose)
+#     for i, past in enumerate(history):
+#         diff = np.matmul(key_pose_inv, past["pose"])
+#         points = past["points"]
+#         npoints = points.shape[0]
+        
+#         # 确保标签数组长度匹配点数
+#         labels = past["labels"]
+#         if len(labels) < npoints:
+#             # 如果标签少于点，为未标记的点添加默认标签（例如0）
+#             new_labels = np.zeros(npoints, dtype=np.uint32)
+#             new_labels[:len(labels)] = labels
+#             labels = new_labels
+#         elif len(labels) > npoints:
+#             # 如果标签多于点，截断标签
+#             labels = labels[:npoints]
+        
+#         tpoints = np.matmul(diff, points.T).T
+#         tpoints[:, 3] = past["remissions"][:npoints]  # 确保remissions长度与点数匹配
+#         tpoints = tpoints.reshape((-1))
+
+#         end = start + npoints
+#         # 不再需要断言
+#         # assert(npoints == past["labels"].shape[0])
+#         concated_points[4 * start:4 * end] = tpoints
+#         concated_labels[start:end] = labels
+#         pc_ids[start:end] = i
+#         start = end
+
+#     return concated_points.reshape((-1, 4)), concated_labels, pc_ids
 
 
 def postprocess(points, labels, cfg):
@@ -230,6 +294,117 @@ def create_costmap(points, labels, cfg, pose=None,
     torch.cuda.empty_cache()
 
     return costmap, None, costmap_pose
+# def create_costmap(points, labels, cfg, pose=None,
+#                    pc_ids=None, key_scan_id=None,
+#                    force_return_cmap=True):  # 始终强制返回 costmap
+#     # 移除无效点
+#     mapped_labels = map_labels(labels, cfg["learning_map"])
+#     not_void = mapped_labels != 0
+    
+#     # 打印调试信息
+#     print(f"Total points: {len(points)}, Valid points: {not_void.sum()}")
+    
+#     map_cfg = cfg["costmap"]
+#     h = int(np.floor((map_cfg["maxy"] - map_cfg["miny"])/map_cfg["gridh"]))
+#     w = int(np.floor((map_cfg["maxx"] - map_cfg["minx"])/map_cfg["gridw"]))
+    
+#     if not_void.sum() == 0:
+#         print("Warning: No valid points found!")
+#         if force_return_cmap:
+#             return np.full((h,w), 255, dtype=np.uint8), None, None
+#         else:
+#             return None, None, None
+    
+#     mapped_labels = mapped_labels[not_void]
+#     points = points[not_void]
+#     mapped_labels = mapped_labels - 1  # 有效标签 0,1,2,3
+    
+#     # 打印标签分布
+#     unique_labels, counts = np.unique(mapped_labels, return_counts=True)
+#     print(f"Label distribution: {dict(zip(unique_labels, counts))}")
+    
+#     assert (mapped_labels.min() >= 0 and mapped_labels.max() < 4)
+    
+#     cu_labels = postprocess(points, mapped_labels, cfg["postprocessing"])
+    
+#     # 未知和天空预测不是有效的
+#     valid = (cu_labels < 4) & (cu_labels >= 0)
+#     valid_sum = valid.cpu().sum()
+#     print(f"Valid points after postprocessing: {valid_sum}")
+    
+#     if valid_sum == 0:
+#         print("Warning: No valid points after postprocessing!")
+#         if force_return_cmap:
+#             return np.full((h,w), 255, dtype=np.uint8), None, None
+#         else:
+#             return None, None, None
+    
+#     points = points[valid.cpu().numpy()]
+#     mapped_labels = cu_labels[valid].cpu().numpy()
+    
+#     ## 投影
+#     j_inds = np.floor((points[:, 0] - map_cfg["minx"]) / map_cfg["gridw"]).astype(np.int32)
+#     i_inds = np.floor((points[:, 1] - map_cfg["miny"]) / map_cfg["gridh"]).astype(np.int32)
+    
+#     inrange = (i_inds >= 0) & (i_inds < h) & (j_inds >= 0) & (j_inds < w)
+#     inrange_sum = inrange.sum()
+#     print(f"Points in range: {inrange_sum}")
+    
+#     if inrange_sum == 0:
+#         print("Warning: No points in range!")
+#         # 检查点的范围
+#         x_min, x_max = points[:, 0].min(), points[:, 0].max()
+#         y_min, y_max = points[:, 1].min(), points[:, 1].max()
+#         print(f"Point cloud range: X [{x_min}, {x_max}], Y [{y_min}, {y_max}]")
+#         print(f"Costmap range: X [{map_cfg['minx']}, {map_cfg['maxx']}], Y [{map_cfg['miny']}, {map_cfg['maxy']}]")
+        
+#         if force_return_cmap:
+#             return np.full((h,w), 255, dtype=np.uint8), None, None
+#         else:
+#             return None, None, None
+    
+#     i_inds, j_inds, mapped_labels = [x[inrange] for x in [i_inds, j_inds, mapped_labels]]
+    
+#     # 假设类别 j 的代价 > 类别 i 的代价，如果 j > i
+#     # 投影点。较高代价的类别会覆盖较低代价的类别。
+#     costmap = np.ones((h, w), np.uint8) * 255
+#     for l in range(4):  # 明确指定类别范围 0-3
+#         mask = mapped_labels == l
+#         if mask.sum() > 0:
+#             hist, _, _ = np.histogram2d(i_inds[mask], j_inds[mask],
+#                                        bins=(h, w),
+#                                        range=((0, h), (0, w)))
+#             costmap[hist > 0] = l
+    
+#     # 检查生成的 costmap
+#     unique_costmap, counts_costmap = np.unique(costmap, return_counts=True)
+#     print(f"Costmap classes: {dict(zip(unique_costmap, counts_costmap))}")
+    
+#     #####
+#     costmap_pose = None
+#     if pose is not None:
+#         costmap_pose = make_costmap_pose(pose, map_cfg)
+    
+#     #### 仅提取关键扫描的后处理标签
+#     key_labels = None
+#     if pc_ids is not None and key_scan_id >= 0:
+#         key_mask = pc_ids[not_void] == key_scan_id
+#         if key_mask.sum() > 0:
+#             key_labels_ = cu_labels[key_mask]
+            
+#             scan_len = (pc_ids == key_scan_id).sum()
+#             key_labels = np.full(scan_len, -1)
+            
+#             key_labels[not_void[pc_ids == key_scan_id]] = key_labels_.cpu().numpy()
+            
+#             # 0,1,2,3,4 是保留的，所以为未知使用 5
+#             key_labels[key_labels < 0] = 5
+            
+#             key_labels = key_labels.astype(np.uint32)
+    
+#     torch.cuda.empty_cache()
+    
+#     return costmap, key_labels, costmap_pose
 
 
 @jit(nopython=True)
