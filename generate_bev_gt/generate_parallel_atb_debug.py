@@ -10,6 +10,7 @@ import numpy as np
 import tqdm
 import torch
 from common import parse_calibration, parse_poses, make_color_map
+device = None
 """
 1. 主程序流程
 
@@ -119,20 +120,20 @@ def gen_costmap(kwargs, mem_frac):
     )
 
     global device
-    # if device is None:
-    #     # 如果 device 未初始化，使用传入的第一个设备
-    #     import os
-    #     if 'CUDA_VISIBLE_DEVICES' in os.environ:
-    #         device = f"cuda:{os.environ['CUDA_VISIBLE_DEVICES'].split(',')[0]}"
-    #     else:
-    #         device = "cuda:0"
-    #     print(f"初始化设备: {device}")
+    if device is None:
+        # 如果 device 未初始化，使用传入的第一个设备
+        import os
+        if 'CUDA_VISIBLE_DEVICES' in os.environ:
+            device = f"cuda:{os.environ['CUDA_VISIBLE_DEVICES'].split(',')[0]}"
+        else:
+            device = "cuda:0"
+        print(f"初始化设备: {device}")
     
-    # if torch.cuda.is_available():
-    #     torch.cuda.set_device(device)
-    #     torch.cuda.set_per_process_memory_fraction(mem_frac)
-    torch.cuda.set_device(device)
-    torch.cuda.set_per_process_memory_fraction(mem_frac)
+    if torch.cuda.is_available():
+        torch.cuda.set_device(device)
+        torch.cuda.set_per_process_memory_fraction(mem_frac)
+    # torch.cuda.set_device(device)
+    # torch.cuda.set_per_process_memory_fraction(mem_frac)
 
     cfg, cmap, scan_files, label_files, poses = [kwargs[_] for _ in [
         'cfg', 'cmap', 'scan_files', 'label_files', 'poses'
@@ -142,7 +143,6 @@ def gen_costmap(kwargs, mem_frac):
     assert len(scan_files) == len(poses)
 
     history = deque()
-
     for i in range(len(scan_files)):
         scan = np.fromfile(scan_files[i], dtype=np.float32)
         scan = scan.reshape((-1, 4))#x y z f
@@ -167,7 +167,6 @@ def gen_costmap(kwargs, mem_frac):
             "pose": poses[i].copy(),
             "filename": scan_files[i]
         })
-
     key_scan_id = len(history) // 2
     key_scan = history[key_scan_id]
 
@@ -176,9 +175,12 @@ def gen_costmap(kwargs, mem_frac):
     #                                     key_scan_id)
     #临时
     new_history = history
+    #将历史点云数据序列合并到统一的坐标系下（以关键帧的坐标系为参考）
     cat_points, cat_labels, pc_ids = join_pointclouds(new_history, key_scan["pose"])
 
     # Create costmap
+    #将带有语义标签的3D点云投影到2D栅格地图上
+    import ipdb; ipdb.set_trace()
     (costmap, key_scan_postprocess_labels,
      costmap_pose) = create_costmap(cat_points, cat_labels, cfg,
                                     pose=key_scan["pose"],
@@ -562,70 +564,70 @@ if __name__ == '__main__':
                         'poses': hist_poses,
                     })
 
-                devices = FLAGS.devices.split(',')
-                manager = multiprocessing.Manager()
-                worker_init_queue = manager.Queue()
-                for i in range(FLAGS.n_worker):
-                    worker_init_queue.put(devices[i % len(devices)])
-
-                ctx = multiprocessing.get_context('spawn')
-                with ctx.Pool(FLAGS.n_worker, initializer=init, initargs=(worker_init_queue,)) as pool:
-                    async_results = [pool.apply_async(gen_costmap, (job, FLAGS.mem_frac)) for job in job_args]
-                    for future in tqdm.tqdm(async_results):
-                        ret = future.get()
-                        ret['scan_ground_frame'].tofile(
-                            os.path.join(velodyne_folder, '{:05d}.bin'.format(counter)))
-                        ret["labels"].tofile(
-                            os.path.join(velodyne_labels_folder, '{:05d}.label'.format(counter)))
-                        ret['postprocessed_labels'].tofile(
-                            os.path.join(velodyne_pp_labels_folder, '{:05d}.label'.format(counter)))
-                        ret['costimg'].save(
-                            os.path.join(labels_folder, "{:05d}.png".format(counter)))
-                        ret['costimg_1step'].save(
-                            os.path.join(labels_1step_folder, "{:05d}.png".format(counter)))
-
-                        all_poses.append(ret['pose'][:3])
-                        all_costmap_poses.append(ret['costmap_pose'][:2])
-                        counter += 1
-
-                    counters[folder] = [start_counter, counter]
-                # 单线程调试版本
                 # devices = FLAGS.devices.split(',')
-                # device = devices[0]
+                # manager = multiprocessing.Manager()
+                # worker_init_queue = manager.Queue()
+                # for i in range(FLAGS.n_worker):
+                #     worker_init_queue.put(devices[i % len(devices)])
 
-                # # 设置 CUDA 设备
-                # if 'cuda' in device:
-                #     torch.cuda.set_device(device)
-                #     torch.cuda.set_per_process_memory_fraction(FLAGS.mem_frac)
+                # ctx = multiprocessing.get_context('spawn')
+                # with ctx.Pool(FLAGS.n_worker, initializer=init, initargs=(worker_init_queue,)) as pool:
+                #     async_results = [pool.apply_async(gen_costmap, (job, FLAGS.mem_frac)) for job in job_args]
+                #     for future in tqdm.tqdm(async_results):
+                #         ret = future.get()
+                #         ret['scan_ground_frame'].tofile(
+                #             os.path.join(velodyne_folder, '{:05d}.bin'.format(counter)))
+                #         ret["labels"].tofile(
+                #             os.path.join(velodyne_labels_folder, '{:05d}.label'.format(counter)))
+                #         ret['postprocessed_labels'].tofile(
+                #             os.path.join(velodyne_pp_labels_folder, '{:05d}.label'.format(counter)))
+                #         ret['costimg'].save(
+                #             os.path.join(labels_folder, "{:05d}.png".format(counter)))
+                #         ret['costimg_1step'].save(
+                #             os.path.join(labels_1step_folder, "{:05d}.png".format(counter)))
+
+                #         all_poses.append(ret['pose'][:3])
+                #         all_costmap_poses.append(ret['costmap_pose'][:2])
+                #         counter += 1
+
+                #     counters[folder] = [start_counter, counter]
+                # 单线程调试版本
+                devices = FLAGS.devices.split(',')
+                device = devices[0]
+
+                # 设置 CUDA 设备
+                if 'cuda' in device:
+                    torch.cuda.set_device(device)
+                    torch.cuda.set_per_process_memory_fraction(FLAGS.mem_frac)
 
                 # 处理任务
-                # for idx, job in enumerate(tqdm.tqdm(job_args, desc="处理")):
-                #     print(f"\n处理任务 {idx+1}/{len(job_args)}")
+                for idx, job in enumerate(tqdm.tqdm(job_args, desc="处理")):
+                    print(f"\n处理任务 {idx+1}/{len(job_args)}")
                     
-                #     # 设置断点 - 在这里可以调试 gen_costmap 函数
-                #     # breakpoint()  # Python 3.7+
-                #     # 或者使用 import pdb; pdb.set_trace()
+                    # 设置断点 - 在这里可以调试 gen_costmap 函数
+                    # breakpoint()  # Python 3.7+
+                    # 或者使用 import pdb; pdb.set_trace()
                     
-                #     # 直接调用 gen_costmap 函数
-                #     ret = gen_costmap(job, FLAGS.mem_frac)
+                    # 直接调用 gen_costmap 函数
+                    ret = gen_costmap(job, FLAGS.mem_frac)
                     
-                #     # 保存结果
-                #     ret['scan_ground_frame'].tofile(
-                #         os.path.join(velodyne_folder, '{:05d}.bin'.format(counter)))
-                #     ret["labels"].tofile(
-                #         os.path.join(velodyne_labels_folder, '{:05d}.label'.format(counter)))
-                #     ret['postprocessed_labels'].tofile(
-                #         os.path.join(velodyne_pp_labels_folder, '{:05d}.label'.format(counter)))
-                #     ret['costimg'].save(
-                #         os.path.join(labels_folder, "{:05d}.png".format(counter)))
-                #     ret['costimg_1step'].save(
-                #         os.path.join(labels_1step_folder, "{:05d}.png".format(counter)))
+                    # 保存结果
+                    ret['scan_ground_frame'].tofile(
+                        os.path.join(velodyne_folder, '{:05d}.bin'.format(counter)))
+                    ret["labels"].tofile(
+                        os.path.join(velodyne_labels_folder, '{:05d}.label'.format(counter)))
+                    ret['postprocessed_labels'].tofile(
+                        os.path.join(velodyne_pp_labels_folder, '{:05d}.label'.format(counter)))
+                    ret['costimg'].save(
+                        os.path.join(labels_folder, "{:05d}.png".format(counter)))
+                    ret['costimg_1step'].save(
+                        os.path.join(labels_1step_folder, "{:05d}.png".format(counter)))
                     
-                #     all_poses.append(ret['pose'][:3])
-                #     all_costmap_poses.append(ret['costmap_pose'][:2])
-                #     counter += 1
+                    all_poses.append(ret['pose'][:3])
+                    all_costmap_poses.append(ret['costmap_pose'][:2])
+                    counter += 1
 
-                # counters[folder] = [start_counter, counter]
+                counters[folder] = [start_counter, counter]
 
             # Save metadatas.
             yaml.dump(counters, open(os.path.join(output_folder, 'counters.yaml'), 'w'))

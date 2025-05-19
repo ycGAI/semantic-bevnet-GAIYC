@@ -102,6 +102,7 @@ def map_labels(labels, learning_map):
 
 def join_pointclouds(history, key_pose):
     # prepare single numpy array for all points that can be written at once.
+    #将历史点云数据序列合并到统一的坐标系下（以关键帧的坐标系为参考）
     num_concat_points = sum([past["points"].shape[0] for past in history])
     concated_points = np.zeros(num_concat_points * 4, dtype=np.float32)
     concated_labels = np.zeros(num_concat_points, dtype=np.uint32)

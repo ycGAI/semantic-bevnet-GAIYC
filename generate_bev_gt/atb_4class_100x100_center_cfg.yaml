@@ -28,7 +28,7 @@ costmap:
 
 # We don't adjust lidar height so that it's easier to compare with the baselines.
 lidar_height: 0.0
-
+#maybe need to adjust the height of atb dataset
 
 postprocessing:
   map:

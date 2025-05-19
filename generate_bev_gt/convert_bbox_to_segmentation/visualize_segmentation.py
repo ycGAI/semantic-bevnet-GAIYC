@@ -193,8 +193,8 @@ def main():
     sequence_path = os.path.join(args.dataset_root, "sequences", args.sequence)
     
     # 文件路径
-    filtered_velodyne = os.path.join(sequence_path, "velodyne_filtered", f"{args.frame}.bin")
-    label_file = os.path.join(sequence_path, "labels_segmentation", f"{args.frame}.label")
+    filtered_velodyne = os.path.join(sequence_path, "velodyne", f"{args.frame}.bin")
+    label_file = os.path.join(sequence_path, "labels", f"{args.frame}.label")
     
     if args.compare:
         original_velodyne = os.path.join(sequence_path, "velodyne", f"{args.frame}.bin")
@@ -206,7 +206,7 @@ if __name__ == "__main__":
     main()
 """
 python3 visualize_segmentation.py \
-    --dataset_root "/media/gyc/Backup Plus3/gyc/thesis/raw_demo_rosbag/dataset" \
+    --dataset_root "/workspace/data/raw_demo_rosbag/dataset" \
     --sequence "00" \
     --frame "000000" \
     --compare
