@@ -66,3 +66,6 @@ if model.g.include_unknown:
     ious = ious[:-1]
 print('ious:', ious)
 print('miou:', np.mean(ious))
+
+
+#root@f5ace121ee94:/workspace/bevnet/bevnet# python test_single.py --model_file /workspace/bevnet/experiments/atb4/single/default---batch_size=4-logs/best.pth.15  --test_env atb4  --visualize

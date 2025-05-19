@@ -127,3 +127,4 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+/experiments/atb4/single/default---batch_size=4-logs/

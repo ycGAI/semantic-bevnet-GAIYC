@@ -97,6 +97,21 @@ def kitti4():
         costmap_pose_file=costmap_pose_file
     )
 
+@register
+def atb4():
+    # seq_dir = get_data_dir() + '/atb_4class_100x100/00/' 
+    seq_dir = "/workspace/data/raw_demo_rosbag/bev_res/sequences/00"
+    scan_dir = os.path.join(seq_dir, 'velodyne')
+    label_dir = os.path.join(seq_dir, 'bev_labels')
+    pose_file = os.path.join(seq_dir, 'poses.txt')
+    costmap_pose_file = os.path.join(seq_dir, 'costmap_poses.txt')
+    return _helper(
+        scan_dir=scan_dir,
+        label_dir=label_dir,
+        pose_file=pose_file,
+        costmap_pose_file=costmap_pose_file
+    )
+
 
 def make(name):
     return _env_dict[name]()
