@@ -186,7 +186,7 @@ def gen_costmap(kwargs, mem_frac):
                                     pose=key_scan["pose"],
                                     pc_ids=pc_ids,
                                     key_scan_id=key_scan_id)
-
+    #costmap_pose 如何从栅格索引转换到世界坐标系  
     if cfg.get('convex_hull', False):
         cvx_hull = compute_convex_hull(costmap)
         costmap[np.logical_not(cvx_hull)] = 4
@@ -563,7 +563,6 @@ if __name__ == '__main__':
                         'label_files': hist_label_files,
                         'poses': hist_poses,
                     })
-
                 # devices = FLAGS.devices.split(',')
                 # manager = multiprocessing.Manager()
                 # worker_init_queue = manager.Queue()
