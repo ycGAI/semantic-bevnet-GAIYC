@@ -49,6 +49,7 @@ def train_single(nets, net_opts, g):
     """
     def forward_nets(nets, x):
         # forward 3 modules: VoxelFeatureEncoder, MiddleSparseEncoder, BEVClassifier
+        import ipdb; ipdb.set_trace()
         voxels = nets['VoxelFeatureEncoder'](x['voxels'], x['num_points'])
         voxel_features = nets['MiddleSparseEncoder'](voxels, x['coordinates'], g.batch_size)
         preds = nets['BEVClassifier'](voxel_features)
@@ -79,6 +80,7 @@ def train_single(nets, net_opts, g):
                 return batch_data[key].to(device, non_blocking=True)
 
             label = to_device('label')
+            import ipdb; ipdb.set_trace()
             inputs = dict()
             inputs['batch_size'] = len(label)
             for key in batch_data:

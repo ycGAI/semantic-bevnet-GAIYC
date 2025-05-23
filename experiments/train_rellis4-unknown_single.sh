@@ -27,4 +27,3 @@ python ../bevnet/train_single.py \
     --include_unknown \
     --log_interval=50 \
     "${@:3}"
-# bash train_atb4-unknown_single.sh atb4/single/default.yaml --batch_size=1 --log_interval=100
