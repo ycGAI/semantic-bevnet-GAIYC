@@ -80,13 +80,13 @@ def train_single(nets, net_opts, g):
                 return batch_data[key].to(device, non_blocking=True)
 
             label = to_device('label')
-            import ipdb; ipdb.set_trace()
             inputs = dict()
             inputs['batch_size'] = len(label)
             for key in batch_data:
                 if key in ['points']:
                     continue
                 inputs[key] = to_device(key)
+            import ipdb; ipdb.set_trace()
 
             pred, loss = step(nets, inputs, labels=label, criterion=criterion)
             loss.backward()

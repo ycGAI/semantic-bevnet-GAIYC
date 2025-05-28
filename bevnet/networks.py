@@ -12,6 +12,7 @@ class VoxelFeatureExtractorV3(nn.Module):
         super(VoxelFeatureExtractorV3, self).__init__()
 
     def forward(self, features, num_voxels):
+        import ipdb; ipdb.set_trace()
         # features: [concated_num_points, num_voxel_size, n_dim]
         # num_voxels: [concated_num_points]
         points_mean = features.sum(
@@ -91,6 +92,7 @@ class SpMiddleNoDownsampleXY(nn.Module):
         )
 
     def forward(self, voxel_features, coors, batch_size):
+        import ipdb; ipdb.set_trace()
         coors = coors.int()
         ret = spconv.SparseConvTensor(voxel_features, coors, self.sparse_shape, batch_size)
         ret = self.middle_conv(ret)
@@ -341,6 +343,7 @@ class InpaintingFCHardNetSkip1024(nn.Module):
         self.fchardnet = fchardnet.HardNet1024Skip(num_input_features, num_class)
 
     def forward(self, x, *args, **kwargs):
+        import ipdb; ipdb.set_trace()
         out = self.fchardnet(x)
         ret_dict = {
             "bev_preds": out,
