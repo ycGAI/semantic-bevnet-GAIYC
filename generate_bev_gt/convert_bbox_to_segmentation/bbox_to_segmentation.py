@@ -11,10 +11,6 @@ import os
 from pathlib import Path
 import struct
 from tqdm import tqdm
-from rclpy.serialization import deserialize_message
-from rosidl_runtime_py.utilities import get_message
-import rosbag2_py
-from scipy.spatial.transform import Rotation
 
 # 地面穿越性类别映射
 TRAVERSABILITY_CLASSES = {
@@ -25,7 +21,7 @@ TRAVERSABILITY_CLASSES = {
 }
 
 class BBoxToSegmentationConverter:
-    def __init__(self, input_path, output_path, sequence="00", mcap_file=None):
+    def __init__(self, input_path, output_path, sequence="00"):
         """
         初始化转换器
         
@@ -33,12 +29,10 @@ class BBoxToSegmentationConverter:
             input_path: 输入数据集路径
             output_path: 输出数据集路径  
             sequence: 序列号
-            mcap_file: 原始MCAP文件路径（用于提取标定信息）
         """
         self.input_path = Path(input_path)
         self.output_path = Path(output_path)
         self.sequence = sequence
-        self.mcap_file = Path(mcap_file) if mcap_file else None
         
         # 输入路径
         if (self.input_path / "sequences" / sequence).exists():
@@ -54,12 +48,6 @@ class BBoxToSegmentationConverter:
         
         print(f"🎯 输入路径: {self.input_sequence_path}")
         print(f"📁 输出路径: {self.output_sequence_path}")
-        if self.mcap_file:
-            print(f"📄 MCAP文件: {self.mcap_file}")
-        
-        # 标定数据存储
-        self.camera_info = {}
-        self.tf_tree = {}
         
     def setup_output_directories(self):
         """创建输出目录结构"""
@@ -340,248 +328,6 @@ class BBoxToSegmentationConverter:
         
         return True, frame_stats
     
-    def extract_calibration_from_mcap(self):
-        """从MCAP文件中提取标定信息"""
-        if not self.mcap_file or not self.mcap_file.exists():
-            print("⚠️  未提供MCAP文件或文件不存在，跳过标定提取")
-            return False
-        
-        print(f"\n🔍 从MCAP文件提取标定信息: {self.mcap_file}")
-        
-        try:
-            reader = rosbag2_py.SequentialReader()
-            reader.open(
-                rosbag2_py.StorageOptions(uri=str(self.mcap_file), storage_id="mcap"),
-                rosbag2_py.ConverterOptions(
-                    input_serialization_format="cdr", 
-                    output_serialization_format="cdr"
-                ),
-            )
-
-            topic_types = reader.get_all_topics_and_types()
-            type_map = {topic.name: topic.type for topic in topic_types}
-            
-            # 查找标定相关话题
-            calibration_topics = []
-            for topic_name in type_map.keys():
-                if any(keyword in topic_name.lower() for keyword in 
-                       ['camera_info', 'calibration', 'tf', 'tf_static']):
-                    calibration_topics.append(topic_name)
-            
-            if not calibration_topics:
-                print("⚠️  没有找到标定相关话题")
-                return False
-            
-            print(f"📋 找到 {len(calibration_topics)} 个标定相关话题")
-            
-            message_count = 0
-            max_messages = 1000
-            
-            while reader.has_next() and message_count < max_messages:
-                topic, data, timestamp = reader.read_next()
-                message_count += 1
-                
-                if topic not in calibration_topics:
-                    continue
-                    
-                try:
-                    msg_type = get_message(type_map[topic])
-                    msg = deserialize_message(data, msg_type)
-                    
-                    # 处理CameraInfo消息
-                    if 'camera_info' in topic.lower():
-                        self.extract_camera_info(topic, msg)
-                    
-                    # 处理TF消息
-                    elif topic in ['/tf', '/tf_static']:
-                        self.extract_tf_transforms(msg)
-                        
-                except Exception as e:
-                    continue
-            
-            del reader
-            
-            print(f"✅ 标定提取完成: {len(self.camera_info)} 个相机, {len(self.tf_tree)} 个变换")
-            return True
-            
-        except Exception as e:
-            print(f"❌ 标定提取失败: {e}")
-            return False
-    
-    def extract_camera_info(self, topic, msg):
-        """提取相机信息"""
-        if hasattr(msg, 'k') and hasattr(msg, 'p'):
-            camera_name = self.get_camera_name(topic)
-            
-            self.camera_info[camera_name] = {
-                'topic': topic,
-                'frame_id': getattr(msg, 'header', {}).frame_id if hasattr(msg, 'header') else 'unknown',
-                'width': getattr(msg, 'width', 0),
-                'height': getattr(msg, 'height', 0),
-                'K': np.array(msg.k).reshape(3, 3) if hasattr(msg, 'k') else None,
-                'D': np.array(msg.d) if hasattr(msg, 'd') else None,
-                'R': np.array(msg.r).reshape(3, 3) if hasattr(msg, 'r') else None,
-                'P': np.array(msg.p).reshape(3, 4) if hasattr(msg, 'p') else None,
-                'distortion_model': getattr(msg, 'distortion_model', 'unknown')
-            }
-    
-    def get_camera_name(self, topic):
-        """从话题名推断相机名称"""
-        topic_lower = topic.lower()
-        if 'left' in topic_lower or 'image_0' in topic_lower:
-            return 'camera_left'
-        elif 'right' in topic_lower or 'image_1' in topic_lower:
-            return 'camera_right'
-        elif 'color' in topic_lower or 'image_2' in topic_lower:
-            return 'camera_color'
-        else:
-            # 从话题路径提取
-            parts = topic.split('/')
-            for part in parts:
-                if 'camera' in part:
-                    return part
-            return 'camera_unknown'
-    
-    def extract_tf_transforms(self, msg):
-        """提取TF变换"""
-        if hasattr(msg, 'transforms'):
-            for transform in msg.transforms:
-                parent = transform.header.frame_id
-                child = transform.child_frame_id
-                
-                # 提取变换矩阵
-                t = transform.transform.translation
-                r = transform.transform.rotation
-                
-                # 四元数转旋转矩阵
-                rotation = Rotation.from_quat([r.x, r.y, r.z, r.w])
-                R_matrix = rotation.as_matrix()
-                
-                # 构建4x4变换矩阵
-                T = np.eye(4)
-                T[:3, :3] = R_matrix
-                T[:3, 3] = [t.x, t.y, t.z]
-                
-                # 只保存静态变换，避免重复
-                transform_key = f"{parent}->{child}"
-                if transform_key not in self.tf_tree:
-                    self.tf_tree[transform_key] = {
-                        'parent': parent,
-                        'child': child,
-                        'translation': [t.x, t.y, t.z],
-                        'rotation_quat': [r.x, r.y, r.z, r.w],
-                        'matrix': T
-                    }
-    
-    def find_transform_chain(self):
-        """查找从velodyne到相机的变换链"""
-        # 从TF树中找到关键变换
-        velodyne_to_sensor_rack = None
-        sensor_rack_to_base_link = None  
-        base_link_to_camera = None
-        
-        for transform_name, transform_data in self.tf_tree.items():
-            # base_link_sensor_rack -> velodyne
-            if (transform_data['parent'] == 'base_link_sensor_rack' and 
-                transform_data['child'] == 'velodyne'):
-                # 需要取逆变换 velodyne -> base_link_sensor_rack
-                T_inv = np.linalg.inv(transform_data['matrix'])
-                velodyne_to_sensor_rack = T_inv
-                
-            # base_link -> base_link_sensor_rack  
-            elif (transform_data['parent'] == 'base_link' and 
-                  transform_data['child'] == 'base_link_sensor_rack'):
-                # 需要取逆变换 base_link_sensor_rack -> base_link
-                T_inv = np.linalg.inv(transform_data['matrix'])
-                sensor_rack_to_base_link = T_inv
-                
-            # base_link -> camera_link
-            elif (transform_data['parent'] == 'base_link' and 
-                  transform_data['child'] == 'camera_link'):
-                base_link_to_camera = transform_data['matrix']
-        
-        # 计算完整变换链: velodyne -> base_link_sensor_rack -> base_link -> camera_link
-        if (velodyne_to_sensor_rack is not None and 
-            sensor_rack_to_base_link is not None and 
-            base_link_to_camera is not None):
-            
-            # 链式变换
-            velodyne_to_camera = base_link_to_camera @ sensor_rack_to_base_link @ velodyne_to_sensor_rack
-            return velodyne_to_camera
-        
-        return None
-    
-    def generate_kitti_calibration(self):
-        """生成KITTI格式的标定文件"""
-        calib_file = self.output_sequence_path / "calib.txt"
-        
-        print(f"📝 生成KITTI标定文件: {calib_file}")
-        
-        with open(calib_file, 'w') as f:
-            f.write("# KITTI Calibration File\n")
-            f.write("# Generated from MCAP bag file and bbox conversion\n")
-            if self.mcap_file:
-                f.write(f"# Source: {self.mcap_file}\n")
-            f.write("\n")
-            
-            # 写入相机投影矩阵
-            camera_mapping = {
-                'camera_left': 'P0',
-                'camera_right': 'P1', 
-                'camera_color': 'P2',
-                'camera_unknown': 'P0'
-            }
-            
-            has_real_camera_data = False
-            for i, (camera_name, camera_data) in enumerate(self.camera_info.items()):
-                if camera_data['P'] is not None:
-                    p_name = camera_mapping.get(camera_name, f'P{i}')
-                    p_matrix = camera_data['P'].flatten()
-                    f.write(f"# {camera_name} ({camera_data['topic']})\n")
-                    f.write(f"# Resolution: {camera_data['width']}x{camera_data['height']}\n")
-                    f.write(f"{p_name}: {' '.join(f'{val:.6e}' for val in p_matrix)}\n\n")
-                    has_real_camera_data = True
-            
-            # 如果没有真实相机数据，添加模板
-            if not has_real_camera_data:
-                f.write("# Camera projection matrices (TEMPLATE - please update with real calibration)\n")
-                f.write("# These are placeholder values and should be replaced with actual camera calibration\n")
-                f.write("P0: 7.215377e+02 0.000000e+00 6.095593e+02 0.000000e+00 0.000000e+00 7.215377e+02 1.728540e+02 0.000000e+00 0.000000e+00 0.000000e+00 1.000000e+00 0.000000e+00\n")
-                f.write("P1: 7.215377e+02 0.000000e+00 6.095593e+02 -3.875744e+02 0.000000e+00 7.215377e+02 1.728540e+02 0.000000e+00 0.000000e+00 0.000000e+00 1.000000e+00 0.000000e+00\n")
-                f.write("P2: 7.215377e+02 0.000000e+00 6.095593e+02 0.000000e+00 0.000000e+00 7.215377e+02 1.728540e+02 0.000000e+00 0.000000e+00 0.000000e+00 1.000000e+00 0.000000e+00\n")
-                f.write("P3: 7.215377e+02 0.000000e+00 6.095593e+02 -3.875744e+02 0.000000e+00 7.215377e+02 1.728540e+02 0.000000e+00 0.000000e+00 0.000000e+00 1.000000e+00 0.000000e+00\n\n")
-            
-            # 写入传感器变换矩阵
-            f.write("# Sensor transformations\n")
-            
-            # 查找激光雷达到相机的变换
-            lidar_to_cam = self.find_transform_chain()
-            
-            if lidar_to_cam is not None:
-                tr_matrix = lidar_to_cam[:3, :].flatten()  # 取前3行
-                f.write(f"# Velodyne to Camera transformation (computed from TF tree)\n")
-                f.write(f"Tr: {' '.join(f'{val:.6e}' for val in tr_matrix)}\n\n")
-                print("✅ 使用计算得到的真实变换")
-            else:
-                f.write("# Velodyne to Camera transformation (template - please update)\n")
-                f.write("Tr: 4.276802385584e-04 -9.999672484946e-01 -8.084491683471e-03 -1.198459927713e-02 -7.210626507497e-03 8.081198471645e-03 -9.999413164504e-01 -5.403984729748e-02 9.999738645903e-01 4.859485810390e-04 -7.206933692422e-03 -2.921968648686e-01\n\n")
-                print("⚠️  使用模板变换")
-            
-            # 写入内参矩阵
-            for camera_name, camera_data in self.camera_info.items():
-                if camera_data['K'] is not None:
-                    f.write(f"# {camera_name} intrinsic matrix\n")
-                    k_matrix = camera_data['K'].flatten()
-                    f.write(f"K_{camera_name}: {' '.join(f'{val:.6e}' for val in k_matrix)}\n")
-                    
-                    if camera_data['D'] is not None:
-                        f.write(f"# {camera_name} distortion coefficients\n") 
-                        d_coeffs = camera_data['D']
-                        f.write(f"D_{camera_name}: {' '.join(f'{val:.6e}' for val in d_coeffs)}\n")
-                    f.write("\n")
-        
-        print("✅ KITTI标定文件生成完成")
-    
     def save_segmentation_labels(self, frame_id, labels):
         """保存完整点云的分割标签"""
         label_file = self.output_sequence_path / "semantic_labels" / f"{frame_id:06d}.label"
@@ -620,10 +366,6 @@ class BBoxToSegmentationConverter:
             return
         
         print(f"📄 找到 {len(velodyne_files)} 个点云文件")
-        
-        # 提取标定信息（如果提供了MCAP文件）
-        if self.mcap_file:
-            self.extract_calibration_from_mcap()
         
         success_count = 0
         failed_count = 0
@@ -684,9 +426,6 @@ class BBoxToSegmentationConverter:
         
         # 生成统计报告
         self.generate_summary_report(global_stats, total_points, total_labeled_points, priority_order, filter_background)
-        
-        # 生成KITTI标定文件
-        self.generate_kitti_calibration()
         
         return global_stats
     
@@ -785,7 +524,6 @@ def main():
     parser.add_argument("input_path", help="输入数据集路径")
     parser.add_argument("output_path", help="输出数据集路径")
     parser.add_argument("-s", "--sequence", default="00", help="序列号 (默认: 00)")
-    parser.add_argument("--mcap-file", help="原始MCAP文件路径（用于提取标定信息）")
     parser.add_argument("--expand-up", type=float, default=0.5, 
                        help="边界框向上扩展距离(米) (默认: 0.5)")
     parser.add_argument("--expand-down", type=float, default=0.3,
@@ -807,8 +545,7 @@ def main():
         converter = BBoxToSegmentationConverter(
             args.input_path, 
             args.output_path, 
-            args.sequence,
-            args.mcap_file
+            args.sequence
         )
         
         converter.convert_dataset(
