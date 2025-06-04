@@ -180,7 +180,7 @@ def gen_costmap(kwargs, mem_frac):
 
     # Create costmap
     #将带有语义标签的3D点云投影到2D栅格地图上
-    import ipdb; ipdb.set_trace()
+    # import ipdb; ipdb.set_trace()
     (costmap, key_scan_postprocess_labels,
      costmap_pose) = create_costmap(cat_points, cat_labels, cfg,
                                     pose=key_scan["pose"],
@@ -190,7 +190,7 @@ def gen_costmap(kwargs, mem_frac):
     if cfg.get('convex_hull', False):
         cvx_hull = compute_convex_hull(costmap)
         costmap[np.logical_not(cvx_hull)] = 4
-
+    import ipdb; ipdb.set_trace()
     costimg = Image.fromarray(costmap, mode='P')
     costimg.putpalette(cmap)
 
@@ -201,6 +201,7 @@ def gen_costmap(kwargs, mem_frac):
 
     costimg_1step = Image.fromarray(costmap_1step, mode='P')
     costimg_1step.putpalette(cmap)
+    import ipdb; ipdb.set_trace()
 
     return {
         'scan_ground_frame': key_scan['scan_ground_frame'],

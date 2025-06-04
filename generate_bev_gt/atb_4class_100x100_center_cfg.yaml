@@ -1,6 +1,6 @@
-input: "/workspace/data/raw_demo_rosbag/dataset"
+input: "/workspace/data/raw_demo_rosbag/dataset_yc"
 # input: "/mnt/ssd1/SARA/Rellis-3D"
-output: "/workspace/data/raw_demo_rosbag/bev_res"
+output: "/workspace/data/raw_demo_rosbag/bev_res_yc_demo"
 
 type: costmap
 
