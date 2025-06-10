@@ -1,0 +1,5 @@
+先使用mcap_to_kitti.py把rosbag解成kitti格式
+然后使用cvat标注
+cvat导出成datumaro3d的json格式
+使用datumaro3djson2txt.py把json的标注文件转换成kitti的txt标注文件
+使用bbox_to_segmentation.py把目标检测的txt标注文件转换成.label格式的分割标注文件，同时过滤掉不在任何bbox中的点云

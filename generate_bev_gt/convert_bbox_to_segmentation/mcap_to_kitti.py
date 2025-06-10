@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-MCAP to KITTI Odometry Dataset Converter with Multiprocessing
-Converts ROS2 bag data to KITTI Odometry format with synchronized timestamps
+MCAP to KITTI Odometry Dataset Converter with Multiprocessing and Integrated Calibration
+Converts ROS2 bag data to KITTI Odometry format with synchronized timestamps and real calibration data
 """
 
 import argparse
@@ -36,6 +36,10 @@ class MCAPToKITTIOdometryConverter:
         self.camera_data = []
         self.lidar_data = []
         self.timestamps = []
+        
+        # 标定数据存储
+        self.camera_info = {}
+        self.tf_tree = {}
         
     def setup_directories(self):
         """创建KITTI Odometry标准目录结构"""
@@ -79,6 +83,178 @@ class MCAPToKITTIOdometryConverter:
         del reader
         print(f"✅ 读取完成，共 {len(messages)} 条消息")
         return messages
+
+    def extract_calibration_data(self):
+        """提取标定数据"""
+        print("\n🎯 提取标定数据...")
+        
+        reader = rosbag2_py.SequentialReader()
+        reader.open(
+            rosbag2_py.StorageOptions(uri=self.input_bag, storage_id="mcap"),
+            rosbag2_py.ConverterOptions(
+                input_serialization_format="cdr", 
+                output_serialization_format="cdr"
+            ),
+        )
+
+        topic_types = reader.get_all_topics_and_types()
+        type_map = {topic.name: topic.type for topic in topic_types}
+        
+        # 查找相关话题
+        calibration_topics = []
+        for topic_name in type_map.keys():
+            if any(keyword in topic_name.lower() for keyword in 
+                   ['camera_info', 'calibration', 'tf', 'tf_static']):
+                calibration_topics.append(topic_name)
+                print(f"  📄 找到标定话题: {topic_name} ({type_map[topic_name]})")
+        
+        if not calibration_topics:
+            print("⚠️  没有找到标定相关话题")
+            del reader
+            return False
+        
+        message_count = 0
+        max_messages = 1000  # 限制读取消息数量
+        
+        while reader.has_next() and message_count < max_messages:
+            topic, data, timestamp = reader.read_next()
+            message_count += 1
+            
+            if topic not in calibration_topics:
+                continue
+                
+            try:
+                msg_type = get_message(type_map[topic])
+                msg = deserialize_message(data, msg_type)
+                
+                # 处理CameraInfo消息
+                if 'camera_info' in topic.lower():
+                    self.extract_camera_info(topic, msg)
+                
+                # 处理TF消息
+                elif topic in ['/tf', '/tf_static']:
+                    self.extract_tf_transforms(msg)
+                    
+            except Exception as e:
+                print(f"⚠️  处理标定消息失败 {topic}: {e}")
+                continue
+        
+        del reader
+        return True
+
+    def extract_camera_info(self, topic, msg):
+        """提取相机信息"""
+        if hasattr(msg, 'k') and hasattr(msg, 'p'):
+            camera_name = self.get_camera_name(topic)
+            
+            self.camera_info[camera_name] = {
+                'topic': topic,
+                'frame_id': getattr(msg, 'header', {}).frame_id if hasattr(msg, 'header') else 'unknown',
+                'width': getattr(msg, 'width', 0),
+                'height': getattr(msg, 'height', 0),
+                'K': np.array(msg.k).reshape(3, 3) if hasattr(msg, 'k') else None,
+                'D': np.array(msg.d) if hasattr(msg, 'd') else None,
+                'R': np.array(msg.r).reshape(3, 3) if hasattr(msg, 'r') else None,
+                'P': np.array(msg.p).reshape(3, 4) if hasattr(msg, 'p') else None,
+                'distortion_model': getattr(msg, 'distortion_model', 'unknown')
+            }
+            
+            print(f"  📷 相机信息: {camera_name}")
+            print(f"     分辨率: {msg.width}x{msg.height}")
+            print(f"     畸变模型: {getattr(msg, 'distortion_model', 'unknown')}")
+
+    def get_camera_name(self, topic):
+        """从话题名推断相机名称"""
+        topic_lower = topic.lower()
+        if 'left' in topic_lower or 'image_0' in topic_lower:
+            return 'camera_left'
+        elif 'right' in topic_lower or 'image_1' in topic_lower:
+            return 'camera_right'
+        elif 'color' in topic_lower or 'image_2' in topic_lower:
+            return 'camera_color'
+        else:
+            # 从话题路径提取
+            parts = topic.split('/')
+            for part in parts:
+                if 'camera' in part:
+                    return part
+            return 'camera_unknown'
+
+    def extract_tf_transforms(self, msg):
+        """提取TF变换"""
+        if hasattr(msg, 'transforms'):
+            for transform in msg.transforms:
+                parent = transform.header.frame_id
+                child = transform.child_frame_id
+                
+                # 提取变换矩阵
+                t = transform.transform.translation
+                r = transform.transform.rotation
+                
+                # 四元数转旋转矩阵
+                rotation = R.from_quat([r.x, r.y, r.z, r.w])
+                R_matrix = rotation.as_matrix()
+                
+                # 构建4x4变换矩阵
+                T = np.eye(4)
+                T[:3, :3] = R_matrix
+                T[:3, 3] = [t.x, t.y, t.z]
+                
+                self.tf_tree[f"{parent}->{child}"] = {
+                    'parent': parent,
+                    'child': child,
+                    'translation': [t.x, t.y, t.z],
+                    'rotation_quat': [r.x, r.y, r.z, r.w],
+                    'matrix': T
+                }
+                
+                print(f"  🔄 TF变换: {parent} -> {child}")
+
+    def find_transform_chain(self, source_keywords, target_keywords):
+        """查找从源到目标的变换链"""
+        # 基于你的TF树计算 velodyne -> camera_link 变换
+        
+        # 从TF树中找到关键变换
+        velodyne_to_sensor_rack = None
+        sensor_rack_to_base_link = None  
+        base_link_to_camera = None
+        
+        for transform_name, transform_data in self.tf_tree.items():
+            # base_link_sensor_rack -> velodyne
+            if (transform_data['parent'] == 'base_link_sensor_rack' and 
+                transform_data['child'] == 'velodyne'):
+                # 需要取逆变换 velodyne -> base_link_sensor_rack
+                T_inv = np.linalg.inv(transform_data['matrix'])
+                velodyne_to_sensor_rack = T_inv
+                print(f"  找到: velodyne -> base_link_sensor_rack")
+                
+            # base_link -> base_link_sensor_rack  
+            elif (transform_data['parent'] == 'base_link' and 
+                  transform_data['child'] == 'base_link_sensor_rack'):
+                # 需要取逆变换 base_link_sensor_rack -> base_link
+                T_inv = np.linalg.inv(transform_data['matrix'])
+                sensor_rack_to_base_link = T_inv
+                print(f"  找到: base_link_sensor_rack -> base_link")
+                
+            # base_link -> camera_link
+            elif (transform_data['parent'] == 'base_link' and 
+                  transform_data['child'] == 'camera_link'):
+                base_link_to_camera = transform_data['matrix']
+                print(f"  找到: base_link -> camera_link")
+        
+        # 计算完整变换链: velodyne -> base_link_sensor_rack -> base_link -> camera_link
+        if (velodyne_to_sensor_rack is not None and 
+            sensor_rack_to_base_link is not None and 
+            base_link_to_camera is not None):
+            
+            # 链式变换
+            velodyne_to_camera = base_link_to_camera @ sensor_rack_to_base_link @ velodyne_to_sensor_rack
+            
+            print(f"  ✅ 计算得到 velodyne -> camera_link 变换")
+            return velodyne_to_camera
+        
+        print(f"  ⚠️  无法构建完整变换链")
+        return None
 
     def process_message_batch(self, message_batch):
         """处理一批消息（多进程调用）"""
@@ -364,34 +540,97 @@ class MCAPToKITTIOdometryConverter:
         print(f"✅ 保存 {len(unique_timestamps)} 个时间戳到 {times_file}")
 
     def create_calib_file(self):
-        """创建标定文件"""
+        """创建标定文件（使用提取的真实标定数据）"""
         calib_file = self.sequence_dir / 'calib.txt'
         
-        # KITTI标定文件模板
-        calib_content = """# KITTI Calibration File Template
-# Please update these values with your actual calibration parameters
-
-# Projection matrix for left gray camera (image_0)
-P0: 7.215377e+02 0.000000e+00 6.095593e+02 0.000000e+00 0.000000e+00 7.215377e+02 1.728540e+02 0.000000e+00 0.000000e+00 0.000000e+00 1.000000e+00 0.000000e+00
-
-# Projection matrix for right gray camera (image_1)
-P1: 7.215377e+02 0.000000e+00 6.095593e+02 -3.875744e+02 0.000000e+00 7.215377e+02 1.728540e+02 0.000000e+00 0.000000e+00 0.000000e+00 1.000000e+00 0.000000e+00
-
-# Projection matrix for left color camera (image_2)
-P2: 7.215377e+02 0.000000e+00 6.095593e+02 0.000000e+00 0.000000e+00 7.215377e+02 1.728540e+02 0.000000e+00 0.000000e+00 0.000000e+00 1.000000e+00 0.000000e+00
-
-# Projection matrix for right color camera (image_3)
-P3: 7.215377e+02 0.000000e+00 6.095593e+02 -3.875744e+02 0.000000e+00 7.215377e+02 1.728540e+02 0.000000e+00 0.000000e+00 0.000000e+00 1.000000e+00 0.000000e+00
-
-# Transformation from velodyne to left camera
-Tr: 4.276802385584e-04 -9.999672484946e-01 -8.084491683471e-03 -1.198459927713e-02 -7.210626507497e-03 8.081198471645e-03 -9.999413164504e-01 -5.403984729748e-02 9.999738645903e-01 4.859485810390e-04 -7.206933692422e-03 -2.921968648686e-01
-"""
+        print(f"📝 生成KITTI标定文件: {calib_file}")
         
         with open(calib_file, 'w') as f:
-            f.write(calib_content)
+            f.write("# KITTI Calibration File\n")
+            f.write("# Generated from MCAP bag file with real calibration data\n")
+            f.write(f"# Source: {self.input_bag}\n\n")
+            
+            # 写入相机投影矩阵
+            camera_mapping = {
+                'camera_left': 'P0',
+                'camera_right': 'P1', 
+                'camera_color': 'P2',
+                'camera_unknown': 'P0'
+            }
+            
+            # 如果有真实的相机标定数据，使用它们
+            if self.camera_info:
+                for i, (camera_name, camera_data) in enumerate(self.camera_info.items()):
+                    if camera_data['P'] is not None:
+                        p_name = camera_mapping.get(camera_name, f'P{i}')
+                        p_matrix = camera_data['P'].flatten()
+                        f.write(f"# {camera_name} ({camera_data['topic']})\n")
+                        f.write(f"# Resolution: {camera_data['width']}x{camera_data['height']}\n")
+                        f.write(f"{p_name}: {' '.join(f'{val:.6e}' for val in p_matrix)}\n\n")
+                
+                print(f"✅ 使用提取的 {len(self.camera_info)} 个相机标定")
+            else:
+                # 没有真实标定数据时使用模板
+                f.write("# Camera projection matrices (TEMPLATE - no real calibration found)\n")
+                f.write("P0: 7.215377e+02 0.000000e+00 6.095593e+02 0.000000e+00 0.000000e+00 7.215377e+02 1.728540e+02 0.000000e+00 0.000000e+00 0.000000e+00 1.000000e+00 0.000000e+00\n")
+                f.write("P1: 7.215377e+02 0.000000e+00 6.095593e+02 -3.875744e+02 0.000000e+00 7.215377e+02 1.728540e+02 0.000000e+00 0.000000e+00 0.000000e+00 1.000000e+00 0.000000e+00\n")
+                f.write("P2: 7.215377e+02 0.000000e+00 6.095593e+02 0.000000e+00 0.000000e+00 7.215377e+02 1.728540e+02 0.000000e+00 0.000000e+00 0.000000e+00 1.000000e+00 0.000000e+00\n")
+                f.write("P3: 7.215377e+02 0.000000e+00 6.095593e+02 -3.875744e+02 0.000000e+00 7.215377e+02 1.728540e+02 0.000000e+00 0.000000e+00 0.000000e+00 1.000000e+00 0.000000e+00\n\n")
+                print("⚠️  没有找到相机标定，使用模板数据")
+            
+            # 写入传感器变换矩阵
+            f.write("# Sensor transformations\n")
+            
+            # 查找激光雷达到相机的变换
+            if self.tf_tree:
+                print("🔍 计算传感器变换...")
+                lidar_to_cam = self.find_transform_chain(['velodyne', 'lidar', 'laser'], 
+                                                       ['camera', 'cam', 'optical'])
+                
+                if lidar_to_cam is not None:
+                    tr_matrix = lidar_to_cam[:3, :].flatten()  # 取前3行
+                    f.write(f"# Velodyne to Camera transformation (computed from TF tree)\n")
+                    f.write(f"Tr: {' '.join(f'{val:.6e}' for val in tr_matrix)}\n\n")
+                    print("✅ 使用计算得到的真实变换")
+                else:
+                    f.write("# Velodyne to Camera transformation (template - TF chain incomplete)\n")
+                    f.write("Tr: 4.276802385584e-04 -9.999672484946e-01 -8.084491683471e-03 -1.198459927713e-02 -7.210626507497e-03 8.081198471645e-03 -9.999413164504e-01 -5.403984729748e-02 9.999738645903e-01 4.859485810390e-04 -7.206933692422e-03 -2.921968648686e-01\n\n")
+                    print("⚠️  TF链不完整，使用模板变换")
+            else:
+                f.write("# Velodyne to Camera transformation (template - no TF data found)\n")
+                f.write("Tr: 4.276802385584e-04 -9.999672484946e-01 -8.084491683471e-03 -1.198459927713e-02 -7.210626507497e-03 8.081198471645e-03 -9.999413164504e-01 -5.403984729748e-02 9.999738645903e-01 4.859485810390e-04 -7.206933692422e-03 -2.921968648686e-01\n\n")
+                print("⚠️  没有找到TF数据，使用模板变换")
+            
+            # 写入内参矩阵（如果有）
+            for camera_name, camera_data in self.camera_info.items():
+                if camera_data['K'] is not None:
+                    f.write(f"# {camera_name} intrinsic matrix\n")
+                    k_matrix = camera_data['K'].flatten()
+                    f.write(f"K_{camera_name}: {' '.join(f'{val:.6e}' for val in k_matrix)}\n")
+                    
+                    if camera_data['D'] is not None:
+                        f.write(f"# {camera_name} distortion coefficients\n") 
+                        d_coeffs = camera_data['D']
+                        f.write(f"D_{camera_name}: {' '.join(f'{val:.6e}' for val in d_coeffs)}\n")
+                    f.write("\n")
         
-        print(f"📝 创建标定文件: {calib_file}")
-        print("⚠️  请根据实际情况更新标定参数！")
+        print(f"✅ KITTI标定文件生成完成: {calib_file}")
+
+    def print_calibration_summary(self):
+        """打印标定数据摘要"""
+        print(f"\n📊 标定数据提取摘要:")
+        print(f"   相机数量: {len(self.camera_info)}")
+        print(f"   TF变换数量: {len(self.tf_tree)}")
+        
+        if self.camera_info:
+            print(f"\n📷 相机信息:")
+            for name, data in self.camera_info.items():
+                print(f"   {name}: {data['width']}x{data['height']} ({data['frame_id']})")
+        
+        if self.tf_tree:
+            print(f"\n🔄 TF变换:")
+            for name, data in self.tf_tree.items():
+                print(f"   {data['parent']} -> {data['child']}")
 
     def convert(self):
         """主转换函数"""
@@ -401,6 +640,10 @@ Tr: 4.276802385584e-04 -9.999672484946e-01 -8.084491683471e-03 -1.198459927713e-
         print(f"📁 输出: {self.output_dir}")
         print(f"🔢 序列号: {self.sequence_id}")
         print(f"⚙️  使用 {self.num_processes} 个进程")
+        
+        # 首先提取标定数据
+        self.extract_calibration_data()
+        self.print_calibration_summary()
         
         # 读取所有消息
         all_messages = self.read_bag_messages()
@@ -472,7 +715,7 @@ Tr: 4.276802385584e-04 -9.999672484946e-01 -8.084491683471e-03 -1.198459927713e-
                 for future in tqdm(lidar_futures, desc="保存点云"):
                     future.result()
         
-        # 创建标定文件
+        # 创建标定文件（使用提取的真实数据）
         self.create_calib_file()
         
         elapsed_time = time.time() - start_time
@@ -484,7 +727,7 @@ Tr: 4.276802385584e-04 -9.999672484946e-01 -8.084491683471e-03 -1.198459927713e-
         print(f"   ├── velodyne/     # 激光雷达点云")
         print(f"   ├── poses.txt     # 位姿文件")
         print(f"   ├── times.txt     # 时间戳文件")
-        print(f"   └── calib.txt     # 标定文件")
+        print(f"   └── calib.txt     # 标定文件（含真实标定数据）")
 
 
 def main():
