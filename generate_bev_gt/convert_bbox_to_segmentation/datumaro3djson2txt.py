@@ -51,5 +51,5 @@ def json_to_kitti(json_path, output_dir):
                             f"{height} {width} {length} {x} {y} {z} {rotation_y}\n")
 
 
-json_to_kitti('/workspace/data/raw_demo_rosbag/dataset_newest/sequences/00/labels/annotations/default.json', 
-              '/workspace/data/raw_demo_rosbag/dataset_newest/sequences/00/labels')
+json_to_kitti('/workspace/data/raw_demo_rosbag/dataset_yc/sequences/00/labels_fin/annotations/default.json', 
+              '/workspace/data/raw_demo_rosbag/dataset_yc/sequences/00/labels_fin')

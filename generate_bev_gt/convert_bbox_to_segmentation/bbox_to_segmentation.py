@@ -53,8 +53,8 @@ class BBoxToSegmentationConverter:
         """创建输出目录结构"""
         directories = [
             "velodyne",           # 过滤后的点云
-            "labels",             # 点云分割标签
-            "semantic_labels",    # 语义分割标签
+            "labels_needed",             # bbox内点云对应的标签
+            "semantic_labels",    # 全部的点云标签
         ]
         
         for dir_name in directories:
