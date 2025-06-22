@@ -15,10 +15,6 @@ MiddleSparseEncoder:
   net_kwargs:
     output_shape: [1, 30, 512, 512, 16]
     num_input_features: 4
-    # 在MiddleSparseEncoder后添加SE注意力
-    use_attention: true
-    attention_type: 'se'
-    attention_reduction: 16
   <<: *default_opt
 
 BEVClassifier:
@@ -26,11 +22,6 @@ BEVClassifier:
   net_kwargs:
     num_class: *num_class
     num_input_features: 192
-    # 在ResNet18的多个位置添加SE注意力
-    use_attention: true
-    attention_type: 'se'
-    attention_positions: ['after_layer2', 'after_layer3']
-    attention_reduction: 16
   <<: *default_opt
 
 loss:

@@ -11,22 +11,17 @@ VoxelFeatureEncoder:
   opt: none
 
 MiddleSparseEncoder:
-  class: SpMiddleNoDownsampleXYWithAttention
+  class: SpMiddleNoDownsampleXY  # 使用原始类
   net_kwargs:
     output_shape: [1, 30, 512, 512, 16]
     num_input_features: 4
-    use_attention: 'cbam'
-    attention_reduction: 16
   <<: *default_opt
 
 BEVClassifier:
-  class: InpaintingResNet18WithAttention
+  class: InpaintingResNet18WithSE  # 只这里使用带SE的类
   net_kwargs:
     num_class: *num_class
     num_input_features: 192
-    use_attention: 'cbam'
-    attention_positions: ['after_layer2', 'after_layer3']
-    attention_reduction: 16
   <<: *default_opt
 
 loss:

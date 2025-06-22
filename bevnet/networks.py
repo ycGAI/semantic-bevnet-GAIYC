@@ -11,7 +11,124 @@ import convgru
 # Import the attention modules from the previous file
 from attention_modules import SEBlock, CBAM, SelfAttention2D, TransformerBlock2D
 
+class SpMiddleNoDownsampleXYWithSE(nn.Module):
+    """SpMiddleNoDownsampleXY with SE attention"""
+    def __init__(self,
+                 output_shape,
+                 num_input_features):
+        super(SpMiddleNoDownsampleXYWithSE, self).__init__()
+        
+        # 复制原始SpMiddleNoDownsampleXY的所有初始化代码
+        BatchNorm1d = functools.partial(nn.BatchNorm1d, eps=1e-3, momentum=0.01)
+        SpConv3d = functools.partial(spconv.SparseConv3d, bias=False)
+        SubMConv3d = functools.partial(spconv.SubMConv3d, bias=False)
 
+        sparse_shape = np.array(output_shape[1:4]) + [1, 0, 0]
+        self.sparse_shape = sparse_shape
+        self.voxel_output_shape = output_shape
+        
+        self.middle_conv = spconv.SparseSequential(
+            SubMConv3d(num_input_features, 32, 3, indice_key="subm0"),
+            BatchNorm1d(32),
+            nn.ReLU(),
+            SubMConv3d(32, 32, 3, indice_key="subm0"),
+            BatchNorm1d(32),
+            nn.ReLU(),
+            SpConv3d(32, 64, 3, (2, 1, 1), padding=[1, 1, 1]),
+            BatchNorm1d(64),
+            nn.ReLU(),
+            SubMConv3d(64, 64, 3, indice_key="subm1"),
+            BatchNorm1d(64),
+            nn.ReLU(),
+            SubMConv3d(64, 64, 3, indice_key="subm1"),
+            BatchNorm1d(64),
+            nn.ReLU(),
+            SubMConv3d(64, 64, 3, indice_key="subm1"),
+            BatchNorm1d(64),
+            nn.ReLU(),
+            SpConv3d(64, 64, 3, (2, 1, 1), padding=[0, 1, 1]),
+            BatchNorm1d(64),
+            nn.ReLU(),
+            SubMConv3d(64, 64, 3, indice_key="subm2"),
+            BatchNorm1d(64),
+            nn.ReLU(),
+            SubMConv3d(64, 64, 3, indice_key="subm2"),
+            BatchNorm1d(64),
+            nn.ReLU(),
+            SubMConv3d(64, 64, 3, indice_key="subm2"),
+            BatchNorm1d(64),
+            nn.ReLU(),
+            SpConv3d(64, 64, (3, 1, 1), (2, 1, 1)),
+            BatchNorm1d(64),
+            nn.ReLU(),
+        )
+        
+        # 添加SE注意力模块
+        self.se = SEBlock(192, reduction=16)  # 64 * 3 = 192
+
+    def forward(self, voxel_features, coors, batch_size):
+        coors = coors.int()
+        ret = spconv.SparseConvTensor(voxel_features, coors, self.sparse_shape, batch_size)
+        ret = self.middle_conv(ret)
+        ret = ret.dense()
+        N, C, D, H, W = ret.shape
+        ret = ret.view(N, C * D, H, W)
+        
+        # 应用SE注意力
+        ret = self.se(ret)
+        
+        return ret
+
+
+class InpaintingResNet18WithSE(nn.Module):
+    """ResNet18 with SE attention blocks"""
+    def __init__(self, num_input_features, num_class):
+        super(InpaintingResNet18WithSE, self).__init__()
+
+        trunk = resnet18(pretrained=False, zero_init_residual=True)
+        self.conv1 = nn.Conv2d(
+            num_input_features, 64, kernel_size=7, stride=2, padding=3, bias=False
+        )
+        self.bn1 = trunk.bn1
+        self.relu = trunk.relu
+
+        self.layer1 = trunk.layer1
+        self.layer2 = trunk.layer2
+        self.layer3 = trunk.layer3
+
+        # 在每层后添加SE模块
+        self.se1 = SEBlock(64, reduction=16)
+        self.se2 = SEBlock(128, reduction=16)
+        self.se3 = SEBlock(256, reduction=16)
+
+        self.up1 = Up(64+256, 256, scale_factor=4)
+        self.up2 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(256, 128, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, num_class, kernel_size=1, padding=0),
+        )
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+
+        x1 = self.layer1(x)
+        x1 = self.se1(x1)  # 应用SE
+        
+        x = self.layer2(x1)
+        x = self.se2(x)    # 应用SE
+        
+        x = self.layer3(x)
+        x = self.se3(x)    # 应用SE
+
+        x = self.up1(x, x1)
+        x = self.up2(x)
+
+        return dict(bev_preds=x)
+    
 class SpMiddleNoDownsampleXYWithAttention(nn.Module):
     """
     SpMiddleNoDownsampleXY with SE attention blocks
