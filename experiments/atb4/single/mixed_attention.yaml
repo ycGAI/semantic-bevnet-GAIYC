@@ -1,0 +1,37 @@
+num_class: &num_class 4
+
+_default_opt: &default_opt
+  opt: Adam
+  opt_kwargs:
+    lr: 3.0e-4
+    eps: 1.0e-5
+
+VoxelFeatureEncoder:
+  class: VoxelFeatureExtractorV3
+  opt: none
+
+MiddleSparseEncoder:
+  class: SpMiddleNoDownsampleXY
+  net_kwargs:
+    output_shape: [1, 30, 512, 512, 16]
+    num_input_features: 4
+    # 在编码器使用轻量的SE
+    use_attention: true
+    attention_type: 'se'
+    attention_reduction: 16
+  <<: *default_opt
+
+BEVClassifier:
+  class: InpaintingResNet18
+  net_kwargs:
+    num_class: *num_class
+    num_input_features: 192
+    # 在分类器使用更强的CBAM
+    use_attention: true
+    attention_type: 'cbam'
+    attention_positions: ['after_layer2', 'after_layer3']
+    attention_reduction: 16
+  <<: *default_opt
+
+loss:
+  name: "CrossEntropy"

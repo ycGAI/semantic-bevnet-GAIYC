@@ -1,0 +1,33 @@
+num_class: &num_class 4
+
+_default_opt: &default_opt
+  opt: Adam
+  opt_kwargs:
+    lr: 2.0e-4  # 降低学习率
+    eps: 1.0e-5
+
+VoxelFeatureEncoder:
+  class: VoxelFeatureExtractorV3
+  opt: none
+
+MiddleSparseEncoder:
+  class: SpMiddleNoDownsampleXY
+  net_kwargs:
+    output_shape: [1, 30, 512, 512, 16]
+    num_input_features: 4
+    # 不在MiddleSparseEncoder使用self-attention（计算量太大）
+  <<: *default_opt
+
+BEVClassifier:
+  class: InpaintingResNet18
+  net_kwargs:
+    num_class: *num_class
+    num_input_features: 192
+    use_attention: true
+    attention_type: 'self'
+    attention_positions: ['after_layer3']  # 只在最后使用
+    attention_reduction: 8
+  <<: *default_opt
+
+loss:
+  name: "CrossEntropy"
