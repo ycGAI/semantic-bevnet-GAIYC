@@ -1,16 +1,16 @@
 input: "/workspace/data/rellis_3d/dataset"
 # input: "/mnt/ssd1/SARA/Rellis-3D"
-output: "rellis_4class_100x100_2"
+output: "/workspace/data/rellis_3d/dataset/rellis_4class_100x100_2_sl50tr1"
 
 type: costmap
 
-sequence_length: 141
-stride: 5
+sequence_length: 50
+stride: 1
 
 
 split: # sequence numbers
   train:
-    - "00000"
+    - "00004"
     # - "00001"
     # - "00002"
     # - "00003"
@@ -18,12 +18,12 @@ split: # sequence numbers
     - "00004"
 
 costmap:
-  minx: -51.2
-  miny: -51.2
-  maxx:  51.2
-  maxy:  51.2
-  gridw: 0.2
-  gridh: 0.2
+  minx: -10.2
+  miny: -10.2
+  maxx:  10.2
+  maxy:  10.2
+  gridw: 0.05
+  gridh: 0.05
 
 
 # We don't adjust lidar height so that it's easier to compare with the baselines.

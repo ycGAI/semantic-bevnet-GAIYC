@@ -1,10 +1,10 @@
 input: "/workspace/data/raw_demo_rosbag/dataset_yc"
 # input: "/mnt/ssd1/SARA/Rellis-3D"
-output: "/workspace/data/raw_demo_rosbag/bev_res_yc_fin_sl25tr1"
+output: "/workspace/data/raw_demo_rosbag/bev_res_yc_fin_sl50tr1"
 
 type: costmap
 
-sequence_length: 25
+sequence_length: 50
 stride: 1
 
 
