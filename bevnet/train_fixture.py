@@ -49,7 +49,7 @@ def train_single(nets, net_opts, g):
     """
     def forward_nets(nets, x):
         # forward 3 modules: VoxelFeatureEncoder, MiddleSparseEncoder, BEVClassifier
-        import ipdb; ipdb.set_trace()
+        # import ipdb; ipdb.set_trace()
         voxels = nets['VoxelFeatureEncoder'](x['voxels'], x['num_points'])
         voxel_features = nets['MiddleSparseEncoder'](voxels, x['coordinates'], g.batch_size)
         preds = nets['BEVClassifier'](voxel_features)
@@ -64,6 +64,7 @@ def train_single(nets, net_opts, g):
             labels[labels == 255] = g.num_class - 1
         if labels is not None and criterion is not None:
             labels = labels.long()
+            # import ipdb;ipdb.set_trace()
             loss = criterion(pred, labels)
         return pred, loss
 
@@ -86,7 +87,7 @@ def train_single(nets, net_opts, g):
                 if key in ['points']:
                     continue
                 inputs[key] = to_device(key)
-            import ipdb; ipdb.set_trace()
+            # import ipdb; ipdb.set_trace()
 
             pred, loss = step(nets, inputs, labels=label, criterion=criterion)
             loss.backward()
@@ -262,6 +263,7 @@ def train_single(nets, net_opts, g):
 
 def train_recurrent(nets, net_opts, g):
     def forward_nets(nets, x):
+        # import ipdb; ipdb.set_trace()
         # forward 3 modules: VoxelFeatureEncoder, MiddleSparseEncoder, BEVClassifier
         voxels = nets['VoxelFeatureEncoder'](x['voxels'], x['num_points'])
         voxel_features = nets['MiddleSparseEncoder'](voxels, x['coordinates'], g.batch_size)
@@ -290,7 +292,7 @@ def train_recurrent(nets, net_opts, g):
         tfu.make_train(nets)
         loss_avg = []
         itr = tqdm(trainloader)
-        
+        # import ipdb;ipdb.set_trace()
         for i, batch in enumerate(itr):
             for _, opt in net_opts.items():
                 opt.zero_grad()
@@ -306,6 +308,7 @@ def train_recurrent(nets, net_opts, g):
             }
 
             pred, loss = _step(nets, input_voxels, labels=label, criterion=criterion)
+            
             loss.backward()
 
             if g.log_interval > 0 and i % g.log_interval == 0:
@@ -400,6 +403,7 @@ def train_recurrent(nets, net_opts, g):
         voxel_generator=voxel_generator,
         n_buffer_scans=g.buffer_scans,
         buffer_scan_stride=g.buffer_scan_stride)
+    # train_dataset.set_label_shape((256, 256))
 
     valid_dataset = bev_utils.BEVLoaderMultistepV3(
         g.eval_input_reader,
@@ -411,6 +415,7 @@ def train_recurrent(nets, net_opts, g):
         voxel_generator=voxel_generator,
         n_buffer_scans=g.buffer_scans,
         buffer_scan_stride=g.buffer_scan_stride)
+    # valid_dataset.set_label_shape((256, 256))
 
     net_scheds = {
         name: torch.optim.lr_scheduler.StepLR(

@@ -71,6 +71,7 @@ class BEVNetBase(object):
 class BEVNetSingle(BEVNetBase):
     def predict(self, points):
         with torch.no_grad():
+            # import ipdb; ipdb.set_trace()
             points_with_idx = np.concatenate([
                 points, np.arange(len(points))[:, None].astype(points.dtype)], axis=-1)
             voxels, coords, num_points = self.voxelizer.generate(points_with_idx, max_voxels=90000)
@@ -103,6 +104,7 @@ class BEVNetRecurrent(BEVNetBase):
 
     def predict(self, points, pose):
         with torch.no_grad():
+            # import ipdb; ipdb.set_trace()
             points_with_idx = np.concatenate([
                 points, np.arange(len(points))[:, None].astype(points.dtype)], axis=-1)
             voxels, coords, num_points = self.voxelizer.generate(points_with_idx, max_voxels=90000)

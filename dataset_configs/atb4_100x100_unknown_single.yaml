@@ -1,5 +1,5 @@
-num_class: 4
-class_weights: [1.0, 1.0, 1.0, 1.0]  # Last class is unknown
+num_class: 5
+class_weights: [1.5, 1.0, 1.0, 1.5, 0.5]  # Last class is unknown
 
 voxelizer:
   point_cloud_range : [-51.2, -51.2, -2, 51.2, 51.2, 1.0]
@@ -9,13 +9,13 @@ voxelizer:
   max_voxels: 20000
 
 train_input_reader:
-  sequences: ['00']
+  sequences: ['train']
   bev_label_dir: 'bev_labels'
   origin: "center"
   augment: ['drop_points']
 
 eval_input_reader:
-  sequences: ['00']
+  sequences: ['valid']
   bev_label_dir: 'bev_labels'
   origin: "center"
   augment: []

@@ -37,7 +37,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     add_common_arguments(parser)
 
-    parser.add_argument('--n_frame', type=int, help='Number of frames in a sequence')
+    parser.add_argument('--n_frame', type=int, default=3, help='Number of frames in a sequence')
     parser.add_argument('--seq_len', type=int, help='Total sequence length')
     parser.add_argument('-f', '--frame_strides', nargs='+', type=int)
 
@@ -46,6 +46,7 @@ if __name__ == "__main__":
     }
 
     g = EasyDict(vars(parser.parse_args()))
+    # import ipdb; ipdb.set_trace()
     dataset_cfg = yaml.load(open(g.dataset_config).read(), Loader=yaml.SafeLoader)
     g.update(dataset_cfg)
 

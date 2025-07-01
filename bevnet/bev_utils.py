@@ -300,6 +300,7 @@ class BEVLoaderV2(data.Dataset):
         self.scan_files = dict()
         seq_lens = []
         for seq in sequences:
+            # import ipdb;ipdb.set_trace()
             self.poses[seq] = np.loadtxt(os.path.join(self.root, seq, 'poses.txt'))
             self.scan_files[seq] = sorted(glob.glob(os.path.join(self.root, seq, 'velodyne', '*.bin')))
             seq_lens.append(len(self.scan_files[seq]))
@@ -728,13 +729,18 @@ class BEVLoaderMultistepV3(data.IterableDataset):
 
         self.shuffle = shuffle
         self.n_frame = n_frame
-        self.frame_strides = frame_strides
+        # self.frame_strides = config['frame_strides'] if 'frame_strides' in config else [1]
+        self.frame_strides = frame_strides if frame_strides is not None else [1]
         self.seq_len = seq_len
 
         self.buffer_scans = n_buffer_scans
         self.buffer_scan_stride = buffer_scan_stride
 
         self.config = config
+    # def set_label_shape(self, label_shape):
+
+    #     assert(isinstance(label_shape, tuple) and len(label_shape) == 2)
+    #     self.label_shape = label_shape
 
     def _valid_range(self, seq_start, seq_end):
         ''' Check if seq_start and seq_end are from the same sequence '''
@@ -760,6 +766,7 @@ class BEVLoaderMultistepV3(data.IterableDataset):
 
             if not self.shuffle:
                 assert(len(self.frame_strides) == 1)
+            # import ipdb;ipdb.set_trace()
             strides = np.random.choice(self.frame_strides, starts.shape)
 
             ends = starts + strides * seq_len

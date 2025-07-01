@@ -1,15 +1,14 @@
+import numpy as np
+from bevnet.attention_modules import SEBlock, CBAM, SelfAttention2D, TransformerBlock2D
 import functools
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import spconv
 from torchvision.models.resnet import resnet18
-import numpy as np
 import fchardnet
 import convgru
 
-# Import the attention modules from the previous file
-from attention_modules import SEBlock, CBAM, SelfAttention2D, TransformerBlock2D
 
 class SpMiddleNoDownsampleXYWithSE(nn.Module):
     """SpMiddleNoDownsampleXY with SE attention"""
@@ -96,7 +95,7 @@ class InpaintingResNet18WithSE(nn.Module):
         self.layer2 = trunk.layer2
         self.layer3 = trunk.layer3
 
-        # 在每层后添加SE模块
+
         self.se1 = SEBlock(64, reduction=16)
         self.se2 = SEBlock(128, reduction=16)
         self.se3 = SEBlock(256, reduction=16)
@@ -116,13 +115,13 @@ class InpaintingResNet18WithSE(nn.Module):
         x = self.relu(x)
 
         x1 = self.layer1(x)
-        x1 = self.se1(x1)  # 应用SE
+        x1 = self.se1(x1)  
         
         x = self.layer2(x1)
-        x = self.se2(x)    # 应用SE
+        x = self.se2(x)    
         
         x = self.layer3(x)
-        x = self.se3(x)    # 应用SE
+        x = self.se3(x)    
 
         x = self.up1(x, x1)
         x = self.up2(x)
@@ -470,7 +469,7 @@ class VoxelFeatureExtractorV3(nn.Module):
         super(VoxelFeatureExtractorV3, self).__init__()
 
     def forward(self, features, num_voxels):
-        import ipdb; ipdb.set_trace()
+        # import ipdb; ipdb.set_trace()
         # features: [concated_num_points, num_voxel_size, n_dim]
         # num_voxels: [concated_num_points]
         points_mean = features.sum(
@@ -550,7 +549,7 @@ class SpMiddleNoDownsampleXY(nn.Module):
         )
 
     def forward(self, voxel_features, coors, batch_size):
-        import ipdb; ipdb.set_trace()
+        # import ipdb; ipdb.set_trace()
         coors = coors.int()
         ret = spconv.SparseConvTensor(voxel_features, coors, self.sparse_shape, batch_size)
         ret = self.middle_conv(ret)
@@ -576,6 +575,7 @@ class SpMiddleNoDownsampleXYMultiStep(SpMiddleNoDownsampleXY):
                 voxel_features_i = voxel_features[i]
                 coors_i = coors[i]
                 coors_i = coors_i.int()
+                # import ipdb; ipdb.set_trace()
                 ret = spconv.SparseConvTensor(voxel_features_i, coors_i, self.sparse_shape, batch_size)
                 ret = self.middle_conv(ret)
                 ret = ret.dense()
@@ -801,9 +801,11 @@ class InpaintingFCHardNetSkip1024(nn.Module):
         self.fchardnet = fchardnet.HardNet1024Skip(num_input_features, num_class)
 
     def forward(self, x, *args, **kwargs):
-        import ipdb; ipdb.set_trace()
+        # import ipdb; ipdb.set_trace()
         out = self.fchardnet(x)
         ret_dict = {
             "bev_preds": out,
         }
         return ret_dict
+class InpaintingFCHardNetSkipGRU512(InpaintingFCHardnetRecurrentBase, InpaintingFCHardNetSkip1024):
+    pass

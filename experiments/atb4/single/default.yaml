@@ -15,7 +15,7 @@ MiddleSparseEncoder:
 BEVClassifier:
   class: InpaintingFCHardNetSkip1024
   net_kwargs: 
-    num_class: 4
+    num_class: 5
     num_input_features: 192
   opt: Adam
   opt_kwargs:

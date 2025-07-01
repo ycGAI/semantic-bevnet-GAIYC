@@ -85,7 +85,8 @@ def rellis4_notrim():
 
 @register
 def kitti4():
-    seq_dir = get_data_dir() + '/semantic_kitti_4class_100x100/08/'
+    # seq_dir = get_data_dir() + '/semantic_kitti_4class_100x100/08/'
+    seq_dir = '/workspace/data/raw_demo_rosbag/bev_res_yc_fin_sl50_str1/sequences/valid'
     scan_dir = os.path.join(seq_dir, 'velodyne')
     label_dir = os.path.join(seq_dir, 'bev_labels')
     pose_file = os.path.join(seq_dir, 'poses.txt')
@@ -100,7 +101,7 @@ def kitti4():
 @register
 def atb4():
     # seq_dir = get_data_dir() + '/atb_4class_100x100/00/' 
-    seq_dir = "/workspace/data/raw_demo_rosbag/bev_res/sequences/00"
+    seq_dir = "/workspace/data/raw_demo_rosbag/bev_res_yc_fin_sl50_str1/sequences/train"
     scan_dir = os.path.join(seq_dir, 'velodyne')
     label_dir = os.path.join(seq_dir, 'bev_labels')
     pose_file = os.path.join(seq_dir, 'poses.txt')

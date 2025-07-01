@@ -13,6 +13,7 @@ from bevnet.args import add_common_arguments
 def build_nets(config, device):
     ret = {}
     for net_name, spec in config.items():
+        # import ipdb;ipdb.set_trace()
         net_class = getattr(networks, spec['class'])
         net_args = spec.get('net_kwargs', {})
         net = net_class(**net_args).to(device)

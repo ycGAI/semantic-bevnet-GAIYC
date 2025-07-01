@@ -1,12 +1,12 @@
 #!/bin/bash
 # 设置基础路径
-EXPERIMENT_DIR="experiments/atb4/single"
-DATASET_CONFIG="../dataset_configs/atb4.yaml"
-DATASET_PATH="../data/atb4_dataset/"  # 根据您的实际路径修改
+EXPERIMENT_DIR="/workspace/bevnet/experiments/atb4/single"
+DATASET_CONFIG="../dataset_configs/atb4_100x100_unknown_single.yaml" 
+DATASET_PATH="/workspace/data/raw_demo_rosbag/bev_res_yc_fin_sl50_str1/sequences"
 
 # 实验1: 基线模型（无注意力）
-echo "Training baseline model without attention..."
-bash train_atb4-unknown_single.sh ${EXPERIMENT_DIR}/baseline_no_attention.yaml baseline
+# echo "Training baseline model without attention..."
+# bash train_atb4-unknown_single.sh ${EXPERIMENT_DIR}/baseline_no_attention.yaml baseline
 
 # 实验2: 轻量级SE（只在分类器）
 echo "Training with SE attention in classifier only..."
@@ -17,16 +17,16 @@ echo "Training with full SE attention..."
 bash train_atb4-unknown_single.sh ${EXPERIMENT_DIR}/se_attention.yaml se_full
 
 # 实验4: CBAM注意力
-echo "Training with CBAM attention..."
-bash train_atb4-unknown_single.sh ${EXPERIMENT_DIR}/cbam_attention.yaml cbam
+# echo "Training with CBAM attention..."
+# bash train_atb4-unknown_single.sh ${EXPERIMENT_DIR}/cbam_attention.yaml cbam
 
 # 实验5: Self-Attention（可选，计算量大）
 # echo "Training with self-attention..."
 # bash train_atb4-unknown_single.sh ${EXPERIMENT_DIR}/self_attention.yaml self_att
 
 # 实验6: 混合注意力
-echo "Training with mixed attention..."
-bash train_atb4-unknown_single.sh ${EXPERIMENT_DIR}/mixed_attention.yaml mixed
+# echo "Training with mixed attention..."
+# bash train_atb4-unknown_single.sh ${EXPERIMENT_DIR}/mixed_attention.yaml mixed
 
 ---
 #!/bin/bash

@@ -37,6 +37,7 @@ e = Evaluator(num_classes=model.g.num_class, ignore_label=ignore_idx)
 
 
 for i in tqdm.trange(len(test_data['scan_files'])):
+    # import ipdb; ipdb.set_trace()
     scan_fn = test_data['scan_files'][i]
     name = os.path.basename(os.path.splitext(scan_fn)[0])
     label_fn = os.path.join(test_data['label_dir'], name + '.png')

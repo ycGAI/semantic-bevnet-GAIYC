@@ -1,21 +1,27 @@
-num_class: 4
-class_weights: [1.0, 1.0, 1.0, 1.0]  # Last class is unknown
+num_class: 5
+class_weights: [1.5, 1.0, 1.0, 1.5, 0.5]  # Last class is unknown
 
 voxelizer:
-  point_cloud_range : [-21.2, -21.2, -2, 21.2, 21.2, 1.0]
+  point_cloud_range : [-51.2, -51.2, -2, 51.2, 51.2, 1.0]
   voxel_size : [0.2, 0.2, 0.1]
   max_number_of_points_per_voxel : 5
   full_mean : False
   max_voxels: 20000
 
 train_input_reader:
-  sequences: ['00']
+  sequences: ['train']
   bev_label_dir: 'bev_labels'
   origin: "center"
   augment: ['drop_points']
+  
+  # # recurrent版本必需的配置
+  # miniseq_sampler:
+  #   len: 10           # 采样序列长度
+  #   chunck_len: 2     # 每个chunk的长度（应该等于n_frame）
+  #   stride: [1]       # 帧间隔
 
 eval_input_reader:
-  sequences: ['00']
+  sequences: ['valid']
   bev_label_dir: 'bev_labels'
   origin: "center"
   augment: []

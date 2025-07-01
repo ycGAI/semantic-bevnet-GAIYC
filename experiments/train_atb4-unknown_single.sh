@@ -21,9 +21,9 @@ fi
 python ../bevnet/train_single.py \
     --model_config="$model_config" \
     --dataset_config="../dataset_configs/atb4_100x100_unknown_single.yaml" \
-    --dataset_path="/workspace/data/raw_demo_rosbag/bev_res/sequences" \
+    --dataset_path="/workspace/data/raw_demo_rosbag/bev_res_yc_fin_sl50_str1/sequences" \
     --output="$out_dir" \
-    --batch_size=4 \
+    --batch_size=1 \
     --include_unknown \
     --log_interval=50 \
     "${@:3}"
