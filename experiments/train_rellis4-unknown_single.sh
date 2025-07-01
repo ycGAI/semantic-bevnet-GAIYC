@@ -21,9 +21,10 @@ fi
 python ../bevnet/train_single.py \
     --model_config="$model_config" \
     --dataset_config="../dataset_configs/rellis4_100x100_unknown_single.yaml" \
-    --dataset_path="../data/rellis_4class_100x100/" \
+    --dataset_path="/workspace/data/rellis_3d/rellis_4class_100x100_sl141_stride5/sequences" \
     --output="$out_dir" \
-    --batch_size=4 \
+    --batch_size=1 \
     --include_unknown \
     --log_interval=50 \
     "${@:3}"
+#bash train_rellis4-unknown_single.sh rellis4_100/single/default.yaml --batch_size=1 --log_interval=100
