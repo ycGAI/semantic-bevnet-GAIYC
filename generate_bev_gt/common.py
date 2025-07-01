@@ -273,22 +273,22 @@ def create_costmap(points, labels, cfg, pose=None,
         costmap[hist != 0] = l
 
     #####
-    range_h_max = 0
-    range_w_max = 0
-    range_h_min = h
-    range_w_min = w
-    for i in range(h):
-        for j in range(w):
-            if costmap[i, j] == 3:
-                range_h_max = max(range_h_max, i)
-                range_w_max = max(range_w_max, j)
-                range_h_min = min(range_h_min, i)
-                range_w_min = min(range_w_min, j)
+    # range_h_max = 0
+    # range_w_max = 0
+    # range_h_min = h
+    # range_w_min = w
+    # for i in range(h):
+    #     for j in range(w):
+    #         if costmap[i, j] == 3:
+    #             range_h_max = max(range_h_max, i)
+    #             range_w_max = max(range_w_max, j)
+    #             range_h_min = min(range_h_min, i)
+    #             range_w_min = min(range_w_min, j)
 
-    for i in range(h):
-        for j in range(w):
-            if costmap[i, j] == 255 and i < range_h_max and j < range_w_max and i > range_h_min and j > range_w_min:
-                costmap[i, j] = 0
+    # for i in range(h):
+    #     for j in range(w):
+    #         if costmap[i, j] == 255 and i < range_h_max and j < range_w_max and i > range_h_min and j > range_w_min:
+    #             costmap[i, j] = 0
     # for i in range(h):
     #     for j in range(w):
     #         if costmap[i, j] == 255 and i < 250 and j < 250 and i > 50 and j > 50:
