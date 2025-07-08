@@ -21,7 +21,7 @@ fi
 python ../bevnet/train_recurrent.py \
     --model_config="$model_config" \
     --dataset_config="../dataset_configs/atb4_100x100_unknown_recurrent.yaml" \
-    --dataset_path="/workspace/data/raw_demo_rosbag/bev_res_yc_fin_sl50_str1/sequences" \
+    --dataset_path="/workspace/data/raw_demo_rosbag/bev_res_yc_fin_sl50tr1/sequences" \
     --output="$out_dir" \
     --batch_size=1 \
     --include_unknown \

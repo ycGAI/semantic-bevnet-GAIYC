@@ -21,7 +21,7 @@ fi
 python ../bevnet/train_single.py \
     --model_config="$model_config" \
     --dataset_config="../dataset_configs/rellis4_100x100_unknown_single.yaml" \
-    --dataset_path="/workspace/data/rellis_3d/dataset/rellis_4class_100x100_2_sl50tr1/sequences" \
+    --dataset_path="/workspace/data/rellis_3d/rellis_4class_100x100_2_sl50tr1/sequences" \
     --output="$out_dir" \
     --batch_size=1 \
     --include_unknown \

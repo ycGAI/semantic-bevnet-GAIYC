@@ -1,26 +1,23 @@
 
+
 VoxelFeatureEncoder:
   class: VoxelFeatureExtractorV3
   opt: none
 
 MiddleSparseEncoder:
-  class: SpMiddleNoDownsampleXYWithAttention  # 新类名
+  class: SpMiddleNoDownsampleXYWithSE
   net_kwargs:
     output_shape: [1, 30, 407, 407, 16]
     num_input_features: 4
-    use_attention: 'se'
-    attention_reduction: 16
   <<: *default_opt
 
 BEVClassifier:
-  class: InpaintingResNet18WithAttention  # 新类名
+  class: InpaintingResNet18WithSE
   net_kwargs:
     num_class: *num_class
     num_input_features: 192
-    use_attention: 'se'
-    attention_positions: ['after_layer2', 'after_layer3']
-    attention_reduction: 16
   <<: *default_opt
 
 loss:
   name: "CrossEntropy"
+  # class_weights: [1.0, 1.0, 1.0, 1.0]

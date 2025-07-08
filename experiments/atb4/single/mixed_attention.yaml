@@ -21,7 +21,7 @@ MiddleSparseEncoder:
 BEVClassifier:
   class: InpaintingResNet18
   net_kwargs:
-    num_class: 4
+    num_class: 5
     num_input_features: 192
     # 在分类器使用更强的CBAM
     use_attention: true

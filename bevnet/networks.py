@@ -1,5 +1,6 @@
 import numpy as np
 from bevnet.attention_modules import SEBlock, CBAM, SelfAttention2D, TransformerBlock2D
+from bevnet.fchardnet import HardNet1024Skip, ConvLayer, HarDBlock
 import functools
 import torch
 import torch.nn as nn
@@ -809,3 +810,229 @@ class InpaintingFCHardNetSkip1024(nn.Module):
         return ret_dict
 class InpaintingFCHardNetSkipGRU512(InpaintingFCHardnetRecurrentBase, InpaintingFCHardNetSkip1024):
     pass
+
+class SEBlock(nn.Module):
+    """Squeeze-and-Excitation block"""
+    def __init__(self, channel, reduction=16):
+        super(SEBlock, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(channel, channel // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(channel // reduction, channel, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c)
+        y = self.fc(y).view(b, c, 1, 1)
+        return x * y.expand_as(x)
+
+
+class HarDBlockWithSE(nn.Module):
+    """HarDBlock with SE attention after concatenation"""
+    def __init__(self, in_channels, growth_rate, grmul, n_layers, 
+                 keepBase=False, residual_out=False, bn=False):
+        super().__init__()
+        self.hardblock = HarDBlock(in_channels, growth_rate, grmul, n_layers, 
+                                  keepBase, residual_out, bn)
+        self.se = SEBlock(self.hardblock.get_out_ch())
+        
+    def get_out_ch(self):
+        return self.hardblock.get_out_ch()
+    
+    def forward(self, x):
+        out = self.hardblock(x)
+        out = self.se(out)
+        return out
+
+
+class InpaintingFCHardNetSkip1024WithSE(nn.Module):
+    """HardNet with SE blocks integrated"""
+    def __init__(self, num_input_features, num_class):
+        super(InpaintingFCHardNetSkip1024WithSE, self).__init__()
+        
+        ch_list = [32, 64, 96, 128, 160]
+        grmul = 1.7
+        gr = [10, 16, 18, 24, 32]
+        n_layers = [4, 4, 8, 8, 8]
+        
+        blks = len(n_layers)
+        self.shortcut_layers = []
+        
+        self.base = nn.ModuleList([])
+        self.predownsample_ch = 32
+        self.base.append(ConvLayer(in_channels=num_input_features,
+                                  out_channels=self.predownsample_ch, 
+                                  kernel=3, stride=2))
+        
+        skip_connection_channel_counts = []
+        ch = 32
+        for i in range(blks):
+            # 使用带SE的HarDBlock
+            if i >= 2:  # 只在后面的块中添加SE（可调整）
+                blk = HarDBlockWithSE(ch, gr[i], grmul, n_layers[i])
+            else:
+                blk = HarDBlock(ch, gr[i], grmul, n_layers[i])
+            
+            ch = blk.get_out_ch()
+            skip_connection_channel_counts.append(ch)
+            self.base.append(blk)
+            
+            if i < blks - 1:
+                self.shortcut_layers.append(len(self.base) - 1)
+            
+            self.base.append(ConvLayer(ch, ch_list[i], kernel=1))
+            ch = ch_list[i]
+            
+            if i < blks - 1:
+                self.base.append(nn.AvgPool2d(kernel_size=2, stride=2))
+        
+        cur_channels_count = ch
+        prev_block_channels = ch
+        n_blocks = blks - 1
+        self.n_blocks = n_blocks
+        
+        # 上采样路径
+        self.transUpBlocks = nn.ModuleList([])
+        self.denseBlocksUp = nn.ModuleList([])
+        self.conv1x1_up = nn.ModuleList([])
+        
+        for i in range(n_blocks - 1, -1, -1):
+            from bevnet.fchardnet import TransitionUp
+            self.transUpBlocks.append(TransitionUp(prev_block_channels, prev_block_channels))
+            cur_channels_count = prev_block_channels + skip_connection_channel_counts[i]
+            
+            # 在上采样路径也添加SE
+            conv_with_se = nn.Sequential(
+                ConvLayer(cur_channels_count, cur_channels_count // 2, kernel=1),
+                SEBlock(cur_channels_count // 2) if i < 2 else nn.Identity()
+            )
+            self.conv1x1_up.append(conv_with_se)
+            cur_channels_count = cur_channels_count // 2
+            
+            blk = HarDBlock(cur_channels_count, gr[i], grmul, n_layers[i])
+            self.denseBlocksUp.append(blk)
+            prev_block_channels = blk.get_out_ch()
+            cur_channels_count = prev_block_channels
+        
+        # 最终上采样
+        self.final_upsample = nn.ConvTranspose2d(cur_channels_count, cur_channels_count, 3,
+                                                stride=2, padding=1)
+        
+        # 最终卷积前添加SE
+        self.pre_final_se = SEBlock(cur_channels_count + num_input_features)
+        self.finalConv = nn.Conv2d(in_channels=cur_channels_count + num_input_features,
+                                  out_channels=num_class, kernel_size=1, stride=1,
+                                  padding=0, bias=True)
+    
+    def forward(self, x):
+        skip_connections = []
+        size_in = x.size()
+        inputs = x
+        
+        # 编码器路径
+        for i in range(len(self.base)):
+            x = self.base[i](x)
+            if i in self.shortcut_layers:
+                skip_connections.append(x)
+        out = x
+        
+        # 解码器路径
+        for i in range(self.n_blocks):
+            skip = skip_connections.pop()
+            out = self.transUpBlocks[i](out, skip, True)
+            out = self.conv1x1_up[i](out)
+            out = self.denseBlocksUp[i](out)
+        
+        out = torch.relu(self.final_upsample(out, output_size=(out.size(0), out.size(1)) + size_in[2:4]))
+        out = torch.cat([inputs, out], dim=1)
+        
+        # 应用最终SE块
+        out = self.pre_final_se(out)
+        out = self.finalConv(out)
+        
+        return dict(bev_preds=out)
+
+# 在 bevnet/networks.py 中添加以下代码
+
+class SelfAttention2D(nn.Module):
+    """Self-attention module for 2D feature maps"""
+    def __init__(self, in_channels, reduction=8):
+        super(SelfAttention2D, self).__init__()
+        self.in_channels = in_channels
+        self.query_conv = nn.Conv2d(in_channels, in_channels // reduction, 1)
+        self.key_conv = nn.Conv2d(in_channels, in_channels // reduction, 1)
+        self.value_conv = nn.Conv2d(in_channels, in_channels, 1)
+        self.gamma = nn.Parameter(torch.zeros(1))
+        self.softmax = nn.Softmax(dim=-1)
+
+    def forward(self, x):
+        batch_size, C, H, W = x.size()
+        
+        # 为了减少计算量，可以先下采样
+        if H * W > 4096:  # 如果特征图太大，先进行下采样
+            x_down = F.adaptive_avg_pool2d(x, (H//2, W//2))
+            proj_query = self.query_conv(x_down).view(batch_size, -1, (H//2) * (W//2)).permute(0, 2, 1)
+            proj_key = self.key_conv(x_down).view(batch_size, -1, (H//2) * (W//2))
+            proj_value = self.value_conv(x_down).view(batch_size, -1, (H//2) * (W//2))
+        else:
+            proj_query = self.query_conv(x).view(batch_size, -1, H * W).permute(0, 2, 1)
+            proj_key = self.key_conv(x).view(batch_size, -1, H * W)
+            proj_value = self.value_conv(x).view(batch_size, -1, H * W)
+        
+        attention = torch.bmm(proj_query, proj_key)
+        attention = self.softmax(attention)
+        
+        out = torch.bmm(proj_value, attention.permute(0, 2, 1))
+        
+        if H * W > 4096:
+            out = out.view(batch_size, C, H//2, W//2)
+            out = F.interpolate(out, size=(H, W), mode='bilinear', align_corners=False)
+        else:
+            out = out.view(batch_size, C, H, W)
+        
+        out = self.gamma * out + x
+        return out
+
+
+class InpaintingFCHardNetSkip1024WithAttention(nn.Module):
+    def __init__(self,
+                 num_class=5,
+                 num_input_features=192,
+                 use_attention='self',
+                 attention_reduction=8):
+        super(InpaintingFCHardNetSkip1024WithAttention, self).__init__()
+        
+        # 基础HardNet架构
+        self.fchardnet = fchardnet.HardNet1024Skip(num_input_features, num_class)
+        
+        # 在最终输出上添加注意力（通道数等于类别数）
+        self.use_attention = use_attention
+        if use_attention == 'se':
+            self.output_attention = nn.Sequential(
+                # 先增加通道数以便SE模块工作更好
+                nn.Conv2d(num_class, num_class * 4, 1),
+                nn.ReLU(inplace=True),
+                SEBlock(num_class * 4, reduction=attention_reduction),
+                nn.Conv2d(num_class * 4, num_class, 1)
+            )
+        elif use_attention == 'self':
+            # 对于自注意力，我们在类别特征图上操作
+            self.output_attention = SelfAttention2D(num_class, reduction=2)  # 减少reduction因为通道数少
+        else:
+            self.output_attention = None
+    
+    def forward(self, x):
+        # 通过基础网络
+        out = self.fchardnet(x)
+        
+        # 应用输出注意力
+        if self.output_attention is not None:
+            out = self.output_attention(out)
+        
+        ret_dict = {
+            "bev_preds": out,
+        }
+        return ret_dict

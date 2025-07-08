@@ -14,18 +14,14 @@ MiddleSparseEncoder:
     eps: 1.0e-5
 
 BEVClassifier:
-  class: InpaintingResNet18
+  class: InpaintingFCHardNetSkip1024WithAttention
   net_kwargs:
-    num_class: *num_class
+    num_class: 5
     num_input_features: 192
-    use_attention: true
-    attention_type: 'self'
-    attention_positions: ['after_layer3']  # 只在最后使用
+    use_attention: 'self'
     attention_reduction: 8
   opt: Adam
   opt_kwargs:
     lr: 3.0e-4
     eps: 1.0e-5
 
-loss:
-  name: "CrossEntropy"
