@@ -31,12 +31,41 @@ pip install -r requirements.txt
 ### SpConv: PyTorch Spatially Sparse Convolution Library
 We utlize spconv for our 3D convolution network. To install:
 ```
-git clone https://github.com/traveller59/spconv.git
+# 进入 bevnet 目录
+cd /workspace/bevnet
+
+# 克隆 spconv 源码
+git clone https://github.com/traveller59/spconv.git --recursive
 cd spconv
-git checkout fad3000249d27ca918f2655ff73c41f39b0f3127
+git checkout v1.2.1
+
+# 初始化子模块（重要！）
 git submodule update --init --recursive
+
+# 设置 CUDA 架构（根据你的 GPU 调整）
+# RTX 3090/3080/3070 (计算能力 8.6)
+export TORCH_CUDA_ARCH_LIST="8.6"
+
+# RTX 2080 Ti/2080/2070 (计算能力 7.5)
+# export TORCH_CUDA_ARCH_LIST="7.5"
+
+# V100 (计算能力 7.0)
+# export TORCH_CUDA_ARCH_LIST="7.0"
+
+# 多架构支持（编译时间较长但兼容性更好）
+# export TORCH_CUDA_ARCH_LIST="7.0;7.5;8.0;8.6"
+
+# 设置 CUDA 路径
+export CUDA_HOME=/usr/local/cuda
+
+# 编译
 python setup.py bdist_wheel
-cd dist && pip install *.whl
+
+# 离开源码目录（重要！避免导入错误）
+cd ..
+
+# 安装编译好的 wheel
+pip install spconv/dist/spconv-1.2.1-cp38-cp38-linux_x86_64.whl
 ```
 
 ## Datasets
