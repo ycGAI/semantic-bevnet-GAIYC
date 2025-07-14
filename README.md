@@ -32,8 +32,9 @@ pip install -r requirements.txt
 We utlize spconv for our 3D convolution network. To install:
 ```
 git clone https://github.com/traveller59/spconv.git
+cd spconv
 git checkout fad3000249d27ca918f2655ff73c41f39b0f3127
-git submodule update
+git submodule update --init --recursive
 python setup.py bdist_wheel
 cd dist && pip install *.whl
 ```
