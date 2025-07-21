@@ -1,0 +1,33 @@
+VoxelFeatureEncoder:
+  class: VoxelFeatureExtractorV3MultiStep
+  opt: none # no learnable parameters
+
+MiddleSparseEncoder:
+  class: SpMiddleNoDownsampleXYWithSEMultiStep
+  net_kwargs:
+    output_shape: [1, 30, 407, 407, 16]
+    num_input_features: 4
+  opt: Adam
+  opt_kwargs:
+    lr: 1.0e-4
+    eps: 1.0e-5
+BEVClassifier:
+  class: InpaintingFCHardNetSkip1024WithTransformerGRU
+  net_kwargs: 
+    num_class: 5
+    num_input_features: 192
+    # Transformer parameters
+    num_heads: 8
+    mlp_ratio: 4.0
+    drop_path: 0.1
+    attention_positions: ['after_layer2', 'after_layer3', 'decoder_layer1']
+    # GRU parameters
+    aggregation_type: 'pre'
+    gru_input_size: [407, 407]  # 根据输出特征图大小调整
+    gru_input_dim: 192  # 输入HardNet的特征维度
+    gru_hidden_dims: [192]
+    gru_cell_type: 'standard'
+  opt: Adam
+  opt_kwargs:
+    lr: 3.0e-4
+    eps: 1.0e-5

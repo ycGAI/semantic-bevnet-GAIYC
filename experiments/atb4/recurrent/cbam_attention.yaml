@@ -1,0 +1,35 @@
+VoxelFeatureEncoder:
+  class: VoxelFeatureExtractorV3MultiStep
+  opt: none # no learnable parameters
+
+MiddleSparseEncoder:
+  class: SpMiddleNoDownsampleXYWithAttentionMultiStep
+  net_kwargs:
+    output_shape: [1, 30, 407, 407, 16]
+    num_input_features: 4
+    use_attention: 'cbam'
+    attention_reduction: 16
+  opt: Adam
+  opt_kwargs:
+    lr: 3.0e-4
+    eps: 1.0e-5
+
+BEVClassifier:
+  class: InpaintingResNet18WithAttentionGRU
+  net_kwargs: 
+    num_class: 5
+    num_input_features: 192
+    # Attention parameters
+    use_attention: 'cbam'
+    attention_positions: ['after_layer2', 'after_layer3']
+    attention_reduction: 16
+    # GRU parameters
+    aggregation_type: 'pre'
+    gru_input_size: [407, 407]
+    gru_input_dim: 192  # 输入ResNet18的特征维度
+    gru_hidden_dims: [192]
+    gru_cell_type: 'standard'
+  opt: Adam
+  opt_kwargs:
+    lr: 3.0e-4
+    eps: 1.0e-5
