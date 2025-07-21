@@ -1035,9 +1035,11 @@ class InpaintingFCHardNetSkip1024WithTransformer(nn.Module):
             
             # Add transformer attention after specific layers
             if f'after_layer{i}' in attention_positions and i < blks - 1:
+                # 计算合适的注意力头数
+                suitable_heads = self._get_suitable_heads(ch, num_heads)
                 self.base.append(TransformerBlock2D(
                     dim=ch, 
-                    num_heads=num_heads if ch >= 64 else 4,  # Adjust heads based on channels
+                    num_heads=suitable_heads,
                     mlp_ratio=mlp_ratio,
                     drop_path=drop_path
                 ))
@@ -1065,9 +1067,10 @@ class InpaintingFCHardNetSkip1024WithTransformer(nn.Module):
             
             # Add transformer in decoder if specified
             if f'decoder_layer{i}' in attention_positions:
+                suitable_heads = self._get_suitable_heads(cur_channels_count, num_heads)
                 self.up_transformers.append(TransformerBlock2D(
                     dim=cur_channels_count,
-                    num_heads=num_heads if cur_channels_count >= 64 else 4,
+                    num_heads=suitable_heads,
                     mlp_ratio=mlp_ratio,
                     drop_path=drop_path
                 ))
@@ -1085,9 +1088,11 @@ class InpaintingFCHardNetSkip1024WithTransformer(nn.Module):
         
         # Optional: Add final transformer before output
         if 'before_output' in attention_positions:
+            final_ch = cur_channels_count + num_input_features
+            suitable_heads = self._get_suitable_heads(final_ch, num_heads)
             self.final_transformer = TransformerBlock2D(
-                dim=cur_channels_count + num_input_features,
-                num_heads=num_heads,
+                dim=final_ch,
+                num_heads=suitable_heads,
                 mlp_ratio=mlp_ratio,
                 drop_path=drop_path
             )
@@ -1097,6 +1102,13 @@ class InpaintingFCHardNetSkip1024WithTransformer(nn.Module):
         self.finalConv = nn.Conv2d(in_channels=cur_channels_count + num_input_features,
                                   out_channels=num_class, kernel_size=1, stride=1,
                                   padding=0, bias=True)
+    
+    def _get_suitable_heads(self, channels, desired_heads):
+        """找到能整除通道数的最接近期望值的注意力头数"""
+        for heads in [desired_heads, 8, 6, 4, 2, 1]:
+            if channels % heads == 0:
+                return heads
+        return 1
     
     def forward(self, x):
         skip_connections = []
@@ -1134,6 +1146,10 @@ class TransformerBlock2D(nn.Module):
                  drop=0., attn_drop=0., drop_path=0., 
                  downsample_ratio=4):  # Spatial downsampling for efficiency
         super(TransformerBlock2D, self).__init__()
+        
+        # 确保num_heads能整除dim
+        assert dim % num_heads == 0, f"dim {dim} must be divisible by num_heads {num_heads}"
+        
         self.downsample_ratio = downsample_ratio
         
         # Efficient spatial downsampling for attention computation
@@ -1192,6 +1208,8 @@ class MultiHeadAttention2D(nn.Module):
     """Efficient multi-head attention for 2D feature maps"""
     def __init__(self, dim, num_heads=8, qkv_bias=False, attn_drop=0., proj_drop=0.):
         super().__init__()
+        assert dim % num_heads == 0, f"dim {dim} must be divisible by num_heads {num_heads}"
+        
         self.num_heads = num_heads
         head_dim = dim // num_heads
         self.scale = head_dim ** -0.5
@@ -1214,6 +1232,9 @@ class MultiHeadAttention2D(nn.Module):
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
+
+
+
 
 
 class MLP(nn.Module):
