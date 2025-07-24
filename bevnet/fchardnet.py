@@ -929,6 +929,113 @@ class FCHardNet_PretrainedProb(nn.Module):
         self.eval()  # Freeze batch norm.
         return torch.softmax(self.hardnet(x), dim=1).detach()
 
+class HardNet1024SkipWithSE(nn.Module):
+    """HardNet1024Skip with integrated SE blocks"""
+    def __init__(self, input_ch, n_classes=19):
+        super(HardNet1024SkipWithSE, self).__init__()
+        
+        ch_list = [32, 64, 96, 128, 160]
+        grmul = 1.7
+        gr = [10, 16, 18, 24, 32]
+        n_layers = [4, 4, 8, 8, 8]
+        
+        blks = len(n_layers)
+        self.shortcut_layers = []
+        
+        self.base = nn.ModuleList([])
+        self.predownsample_ch = 32
+        self.base.append(ConvLayer(in_channels=input_ch,
+                                  out_channels=self.predownsample_ch, 
+                                  kernel=3, stride=2))
+        
+        skip_connection_channel_counts = []
+        ch = 32
+        for i in range(blks):
+            blk = HarDBlock(ch, gr[i], grmul, n_layers[i])
+            ch = blk.get_out_ch()
+            skip_connection_channel_counts.append(ch)
+            self.base.append(blk)
+            
+            if i < blks - 1:
+                self.shortcut_layers.append(len(self.base) - 1)
+            
+            self.base.append(ConvLayer(ch, ch_list[i], kernel=1))
+            ch = ch_list[i]
+            
+            # 在每个下采样阶段后添加SE块
+            if i >= 2:  # 只在深层添加
+                self.base.append(SEBlock(ch, reduction=16))
+            
+            if i < blks - 1:
+                self.base.append(nn.AvgPool2d(kernel_size=2, stride=2))
+        
+        cur_channels_count = ch
+        prev_block_channels = ch
+        n_blocks = blks - 1
+        self.n_blocks = n_blocks
+        
+        # 上采样路径
+        self.transUpBlocks = nn.ModuleList([])
+        self.denseBlocksUp = nn.ModuleList([])
+        self.conv1x1_up = nn.ModuleList([])
+        self.se_up = nn.ModuleList([])  # SE blocks for upsampling path
+        
+        for i in range(n_blocks - 1, -1, -1):
+            self.transUpBlocks.append(TransitionUp(prev_block_channels, prev_block_channels))
+            cur_channels_count = prev_block_channels + skip_connection_channel_counts[i]
+            self.conv1x1_up.append(ConvLayer(cur_channels_count, cur_channels_count // 2, kernel=1))
+            cur_channels_count = cur_channels_count // 2
+            
+            # 在上采样路径添加SE
+            if i < 2:
+                self.se_up.append(SEBlock(cur_channels_count, reduction=16))
+            else:
+                self.se_up.append(nn.Identity())
+            
+            blk = HarDBlock(cur_channels_count, gr[i], grmul, n_layers[i])
+            self.denseBlocksUp.append(blk)
+            prev_block_channels = blk.get_out_ch()
+            cur_channels_count = prev_block_channels
+        
+        # 最终上采样
+        self.final_upsample = nn.ConvTranspose2d(cur_channels_count, cur_channels_count, 3,
+                                                stride=2, padding=1)
+        
+        # 最终卷积前添加SE
+        self.pre_final_se = SEBlock(cur_channels_count + input_ch, reduction=16)
+        self.finalConv = nn.Conv2d(in_channels=cur_channels_count + input_ch,
+                                  out_channels=n_classes, kernel_size=1, stride=1,
+                                  padding=0, bias=True)
+    
+    def forward(self, x):
+        skip_connections = []
+        size_in = x.size()
+        inputs = x
+        
+        # 编码器路径
+        for i in range(len(self.base)):
+            x = self.base[i](x)
+            if i in self.shortcut_layers:
+                skip_connections.append(x)
+        out = x
+        
+        # 解码器路径
+        for i in range(self.n_blocks):
+            skip = skip_connections.pop()
+            out = self.transUpBlocks[i](out, skip, True)
+            out = self.conv1x1_up[i](out)
+            out = self.se_up[i](out)  # Apply SE if present
+            out = self.denseBlocksUp[i](out)
+        
+        out = F.relu(self.final_upsample(out, output_size=(out.size(0), out.size(1)) + size_in[2:4]))
+        out = torch.cat([inputs, out], dim=1)
+        
+        # 应用最终SE块
+        out = self.pre_final_se(out)
+        out = self.finalConv(out)
+        
+        return out
+
 
 if __name__ == '__main__':
     def test_hardnet256():

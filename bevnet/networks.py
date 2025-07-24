@@ -878,111 +878,18 @@ class HarDBlockWithSE(nn.Module):
 
 
 class InpaintingFCHardNetSkip1024WithSE(nn.Module):
-    """HardNet with SE blocks integrated"""
-    def __init__(self, num_input_features, num_class):
+    def __init__(self,
+                 num_class=2,
+                 num_input_features=128):
         super(InpaintingFCHardNetSkip1024WithSE, self).__init__()
-        
-        ch_list = [32, 64, 96, 128, 160]
-        grmul = 1.7
-        gr = [10, 16, 18, 24, 32]
-        n_layers = [4, 4, 8, 8, 8]
-        
-        blks = len(n_layers)
-        self.shortcut_layers = []
-        
-        self.base = nn.ModuleList([])
-        self.predownsample_ch = 32
-        self.base.append(ConvLayer(in_channels=num_input_features,
-                                  out_channels=self.predownsample_ch, 
-                                  kernel=3, stride=2))
-        
-        skip_connection_channel_counts = []
-        ch = 32
-        for i in range(blks):
-            # 使用带SE的HarDBlock
-            if i >= 2:  # 只在后面的块中添加SE（可调整）
-                blk = HarDBlockWithSE(ch, gr[i], grmul, n_layers[i])
-            else:
-                blk = HarDBlock(ch, gr[i], grmul, n_layers[i])
-            
-            ch = blk.get_out_ch()
-            skip_connection_channel_counts.append(ch)
-            self.base.append(blk)
-            
-            if i < blks - 1:
-                self.shortcut_layers.append(len(self.base) - 1)
-            
-            self.base.append(ConvLayer(ch, ch_list[i], kernel=1))
-            ch = ch_list[i]
-            
-            if i < blks - 1:
-                self.base.append(nn.AvgPool2d(kernel_size=2, stride=2))
-        
-        cur_channels_count = ch
-        prev_block_channels = ch
-        n_blocks = blks - 1
-        self.n_blocks = n_blocks
-        
-        # 上采样路径
-        self.transUpBlocks = nn.ModuleList([])
-        self.denseBlocksUp = nn.ModuleList([])
-        self.conv1x1_up = nn.ModuleList([])
-        
-        for i in range(n_blocks - 1, -1, -1):
-            from bevnet.fchardnet import TransitionUp
-            self.transUpBlocks.append(TransitionUp(prev_block_channels, prev_block_channels))
-            cur_channels_count = prev_block_channels + skip_connection_channel_counts[i]
-            
-            # 在上采样路径也添加SE
-            conv_with_se = nn.Sequential(
-                ConvLayer(cur_channels_count, cur_channels_count // 2, kernel=1),
-                SEBlock(cur_channels_count // 2) if i < 2 else nn.Identity()
-            )
-            self.conv1x1_up.append(conv_with_se)
-            cur_channels_count = cur_channels_count // 2
-            
-            blk = HarDBlock(cur_channels_count, gr[i], grmul, n_layers[i])
-            self.denseBlocksUp.append(blk)
-            prev_block_channels = blk.get_out_ch()
-            cur_channels_count = prev_block_channels
-        
-        # 最终上采样
-        self.final_upsample = nn.ConvTranspose2d(cur_channels_count, cur_channels_count, 3,
-                                                stride=2, padding=1)
-        
-        # 最终卷积前添加SE
-        self.pre_final_se = SEBlock(cur_channels_count + num_input_features)
-        self.finalConv = nn.Conv2d(in_channels=cur_channels_count + num_input_features,
-                                  out_channels=num_class, kernel_size=1, stride=1,
-                                  padding=0, bias=True)
-    
-    def forward(self, x):
-        skip_connections = []
-        size_in = x.size()
-        inputs = x
-        
-        # 编码器路径
-        for i in range(len(self.base)):
-            x = self.base[i](x)
-            if i in self.shortcut_layers:
-                skip_connections.append(x)
-        out = x
-        
-        # 解码器路径
-        for i in range(self.n_blocks):
-            skip = skip_connections.pop()
-            out = self.transUpBlocks[i](out, skip, True)
-            out = self.conv1x1_up[i](out)
-            out = self.denseBlocksUp[i](out)
-        
-        out = torch.relu(self.final_upsample(out, output_size=(out.size(0), out.size(1)) + size_in[2:4]))
-        out = torch.cat([inputs, out], dim=1)
-        
-        # 应用最终SE块
-        out = self.pre_final_se(out)
-        out = self.finalConv(out)
-        
-        return dict(bev_preds=out)
+        self.fchardnet = fchardnet.HardNet1024SkipWithSE(num_input_features, num_class)
+
+    def forward(self, x, *args, **kwargs):
+        out = self.fchardnet(x)
+        ret_dict = {
+            "bev_preds": out,
+        }
+        return ret_dict
 class InpaintingFCHardNetSkip1024WithSEGRU(InpaintingFCHardnetRecurrentBase, InpaintingFCHardNetSkip1024WithSE):
     pass
 
