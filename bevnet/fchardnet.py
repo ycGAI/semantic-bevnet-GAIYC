@@ -6,6 +6,7 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from bevnet.attention_modules import SEBlock, CBAM, SelfAttention2D, TransformerBlock2D
 
 
 class ConvLayer(nn.Sequential):
