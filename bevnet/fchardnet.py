@@ -1079,3 +1079,126 @@ if __name__ == '__main__':
     # test_hardnet256_skip()
     # test_hardnet256()
     test_hardnet1024_skip()
+
+
+class HardNet1024SkipWithCBAM(nn.Module):
+    """
+    HardNet1024Skip with CBAM attention blocks
+    Tuned for input size of 1024 x 1024 (or similar)
+    """
+    def __init__(self, input_ch, n_classes=19,
+                 attention_positions=['after_block2', 'after_block3', 'after_block4', 'decoder_block1', 'before_output'],
+                 attention_reduction=16):
+        super(HardNet1024SkipWithCBAM, self).__init__()
+
+        ch_list = [32, 64, 96, 128, 160]
+        grmul = 1.7
+        gr = [10, 16, 18, 24, 32]
+        n_layers = [4, 4, 8, 8, 8]
+
+        blks = len(n_layers)
+        self.shortcut_layers = []
+        self.attention_positions = attention_positions
+
+        self.base = nn.ModuleList([])
+        self.predownsample_ch = 32
+        self.base.append(ConvLayer(in_channels=input_ch, out_channels=self.predownsample_ch,
+                                   kernel=3, stride=2))
+
+        skip_connection_channel_counts = []
+        ch = 32
+        for i in range(blks):
+            blk = HarDBlock(ch, gr[i], grmul, n_layers[i])
+            ch = blk.get_out_ch()
+            skip_connection_channel_counts.append(ch)
+            self.base.append(blk)
+            
+            # Add CBAM after HarDBlock if specified
+            if f'after_block{i}' in attention_positions:
+                self.base.append(CBAM(ch, reduction=attention_reduction))
+            
+            if i < blks - 1:
+                self.shortcut_layers.append(len(self.base) - 1)
+
+            self.base.append(ConvLayer(ch, ch_list[i], kernel=1))
+            ch = ch_list[i]
+
+            if i < blks - 1:
+                self.base.append(nn.AvgPool2d(kernel_size=2, stride=2))
+
+        cur_channels_count = ch
+        prev_block_channels = ch
+        n_blocks = blks - 1
+        self.n_blocks = n_blocks
+
+        #######################
+        #   Upsampling path   #
+        #######################
+
+        self.transUpBlocks = nn.ModuleList([])
+        self.denseBlocksUp = nn.ModuleList([])
+        self.conv1x1_up = nn.ModuleList([])
+
+        for i in range(n_blocks - 1, -1, -1):
+            self.transUpBlocks.append(TransitionUp(prev_block_channels, prev_block_channels))
+            cur_channels_count = prev_block_channels + skip_connection_channel_counts[i]
+            self.conv1x1_up.append(ConvLayer(cur_channels_count, cur_channels_count // 2, kernel=1))
+            cur_channels_count = cur_channels_count // 2
+
+            blk = HarDBlock(cur_channels_count, gr[i], grmul, n_layers[i])
+            self.denseBlocksUp.append(blk)
+            
+            # Add CBAM in decoder if specified
+            if f'decoder_block{n_blocks-1-i}' in attention_positions:
+                self.denseBlocksUp.append(CBAM(blk.get_out_ch(), reduction=attention_reduction))
+                
+            prev_block_channels = blk.get_out_ch()
+            cur_channels_count = prev_block_channels
+
+        # 2x upsample
+        self.final_upsample = nn.ConvTranspose2d(cur_channels_count, cur_channels_count, 3,
+                                                 stride=2, padding=1)
+        
+        # Add CBAM before final convolution if specified
+        if 'before_output' in attention_positions:
+            self.pre_final_cbam = CBAM(cur_channels_count + input_ch, reduction=attention_reduction)
+        else:
+            self.pre_final_cbam = None
+            
+        self.finalConv = nn.Conv2d(in_channels=cur_channels_count + input_ch,
+                                   out_channels=n_classes, kernel_size=1, stride=1,
+                                   padding=0, bias=True)
+
+    def forward(self, x):
+        skip_connections = []
+        size_in = x.size()
+        inputs = x
+
+        for i in range(len(self.base)):
+            x = self.base[i](x)
+            if i in self.shortcut_layers:
+                skip_connections.append(x)
+        out = x
+
+        for i in range(self.n_blocks):
+            skip = skip_connections.pop()
+            out = self.transUpBlocks[i](out, skip, True)
+            out = self.conv1x1_up[i](out)
+            
+            # Apply HarDBlock
+            out = self.denseBlocksUp[i*2](out)  # HarDBlock
+            
+            # Apply CBAM if it exists (we append it after HarDBlock)
+            if i*2+1 < len(self.denseBlocksUp) and isinstance(self.denseBlocksUp[i*2+1], CBAM):
+                out = self.denseBlocksUp[i*2+1](out)
+
+        out = F.relu(self.final_upsample(out, output_size=(out.size(0), out.size(1)) + size_in[2:4]))
+
+        out = torch.cat([inputs, out], dim=1)
+        
+        # Apply final CBAM if specified
+        if self.pre_final_cbam is not None:
+            out = self.pre_final_cbam(out)
+            
+        out = self.finalConv(out)
+        return out

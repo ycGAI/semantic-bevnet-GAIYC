@@ -16,12 +16,11 @@ MiddleSparseEncoder:
     eps: 1.0e-5
 
 BEVClassifier:
-  class: InpaintingResNet18WithAttention
+  class: InpaintingFCHardNetSkip1024WithCBAM
   net_kwargs:
     num_class: 5
     num_input_features: 192
-    use_attention: 'cbam'
-    attention_positions: ['after_layer2', 'after_layer3']
+    attention_positions: ['after_block2', 'after_block3', 'after_block4', 'decoder_block1', 'before_output']
     attention_reduction: 16
   opt: Adam
   opt_kwargs:

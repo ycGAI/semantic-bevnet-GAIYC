@@ -15,20 +15,16 @@ MiddleSparseEncoder:
     eps: 1.0e-5
 
 BEVClassifier:
-  class: InpaintingResNet18WithAttentionGRU
-  net_kwargs: 
+  class: InpaintingFCHardNetSkipWithCBAMGRU512
+  net_kwargs:
     num_class: 5
     num_input_features: 192
-    # Attention parameters
-    use_attention: 'cbam'
-    attention_positions: ['after_layer2', 'after_layer3']
+    attention_positions: ['after_block2', 'after_block3', 'after_block4']
     attention_reduction: 16
-    # GRU parameters
-    aggregation_type: 'pre'
+    aggregation_type: pre
     gru_input_size: [407, 407]
-    gru_input_dim: 192  # 输入ResNet18的特征维度
+    gru_input_dim: 192
     gru_hidden_dims: [192]
-    gru_cell_type: 'standard'
   opt: Adam
   opt_kwargs:
     lr: 3.0e-4

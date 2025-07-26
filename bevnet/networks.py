@@ -1,12 +1,11 @@
 import numpy as np
 from bevnet.attention_modules import SEBlock, CBAM, SelfAttention2D, TransformerBlock2D
-from bevnet.fchardnet import HardNet1024Skip, ConvLayer, HarDBlock
+from bevnet.fchardnet import HardNet1024Skip, ConvLayer, HarDBlock, HardNet1024SkipWithCBAM
 import functools
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import spconv
-from torchvision.models.resnet import resnet18
 import fchardnet
 import convgru
 
@@ -80,54 +79,6 @@ class SpMiddleNoDownsampleXYWithSE(nn.Module):
         return ret
 
 
-class InpaintingResNet18WithSE(nn.Module):
-    """ResNet18 with SE attention blocks"""
-    def __init__(self, num_input_features, num_class):
-        super(InpaintingResNet18WithSE, self).__init__()
-
-        trunk = resnet18(pretrained=False, zero_init_residual=True)
-        self.conv1 = nn.Conv2d(
-            num_input_features, 64, kernel_size=7, stride=2, padding=3, bias=False
-        )
-        self.bn1 = trunk.bn1
-        self.relu = trunk.relu
-
-        self.layer1 = trunk.layer1
-        self.layer2 = trunk.layer2
-        self.layer3 = trunk.layer3
-
-
-        self.se1 = SEBlock(64, reduction=16)
-        self.se2 = SEBlock(128, reduction=16)
-        self.se3 = SEBlock(256, reduction=16)
-
-        self.up1 = Up(64+256, 256, scale_factor=4)
-        self.up2 = nn.Sequential(
-            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
-            nn.Conv2d(256, 128, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(128, num_class, kernel_size=1, padding=0),
-        )
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-
-        x1 = self.layer1(x)
-        x1 = self.se1(x1)  
-        
-        x = self.layer2(x1)
-        x = self.se2(x)    
-        
-        x = self.layer3(x)
-        x = self.se3(x)    
-
-        x = self.up1(x, x1)
-        x = self.up2(x)
-
-        return dict(bev_preds=x)
     
 class SpMiddleNoDownsampleXYWithAttention(nn.Module):
     """
@@ -214,96 +165,6 @@ class SpMiddleNoDownsampleXYWithAttention(nn.Module):
         
         return ret
 
-
-class InpaintingResNet18WithAttention(nn.Module):
-    """ResNet18 with attention modules for BEV semantic segmentation"""
-    def __init__(self, num_input_features, num_class, 
-                 use_attention='se',  # 'se', 'cbam', 'self', 'transformer', or None
-                 attention_positions=['after_layer1', 'after_layer2', 'after_layer3'],
-                 attention_reduction=16):
-        super(InpaintingResNet18WithAttention, self).__init__()
-
-        trunk = resnet18(pretrained=False, zero_init_residual=True)
-        self.conv1 = nn.Conv2d(
-            num_input_features, 64, kernel_size=7, stride=2, padding=3, bias=False
-        )
-        self.bn1 = trunk.bn1
-        self.relu = trunk.relu
-
-        self.layer1 = trunk.layer1
-        self.layer2 = trunk.layer2
-        self.layer3 = trunk.layer3
-
-        self.use_attention = use_attention
-        self.attention_positions = attention_positions
-        
-        # Add attention modules at specified positions
-        if use_attention and 'after_layer1' in attention_positions:
-            if use_attention == 'se':
-                self.attention1 = SEBlock(64, reduction=attention_reduction)
-            elif use_attention == 'cbam':
-                self.attention1 = CBAM(64, reduction=attention_reduction)
-            elif use_attention == 'self':
-                self.attention1 = SelfAttention2D(64, reduction=8)
-            elif use_attention == 'transformer':
-                self.attention1 = TransformerBlock2D(64, num_heads=4)
-        else:
-            self.attention1 = None
-            
-        if use_attention and 'after_layer2' in attention_positions:
-            if use_attention == 'se':
-                self.attention2 = SEBlock(128, reduction=attention_reduction)
-            elif use_attention == 'cbam':
-                self.attention2 = CBAM(128, reduction=attention_reduction)
-            elif use_attention == 'self':
-                self.attention2 = SelfAttention2D(128, reduction=8)
-            elif use_attention == 'transformer':
-                self.attention2 = TransformerBlock2D(128, num_heads=8)
-        else:
-            self.attention2 = None
-            
-        if use_attention and 'after_layer3' in attention_positions:
-            if use_attention == 'se':
-                self.attention3 = SEBlock(256, reduction=attention_reduction)
-            elif use_attention == 'cbam':
-                self.attention3 = CBAM(256, reduction=attention_reduction)
-            elif use_attention == 'self':
-                self.attention3 = SelfAttention2D(256, reduction=8)
-            elif use_attention == 'transformer':
-                self.attention3 = TransformerBlock2D(256, num_heads=8)
-        else:
-            self.attention3 = None
-
-        self.up1 = Up(64+256, 256, scale_factor=4)
-        self.up2 = nn.Sequential(
-            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
-            nn.Conv2d(256, 128, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(128, num_class, kernel_size=1, padding=0),
-        )
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-
-        x1 = self.layer1(x)
-        if self.attention1 is not None:
-            x1 = self.attention1(x1)
-            
-        x = self.layer2(x1)
-        if self.attention2 is not None:
-            x = self.attention2(x)
-            
-        x = self.layer3(x)
-        if self.attention3 is not None:
-            x = self.attention3(x)
-
-        x = self.up1(x, x1)
-        x = self.up2(x)
-
-        return dict(bev_preds=x)
 
 
 class Up(nn.Module):
@@ -1243,124 +1104,6 @@ class SpMiddleNoDownsampleXYWithAttentionMultiStep(SpMiddleNoDownsampleXYWithAtt
             return output
 
 
-class InpaintingResNet18WithAttentionRecurrentBase(object):
-    """Base class for ResNet18 with attention and GRU"""
-    def __init__(self,
-                 aggregation_type='pre',
-                 gru_input_size=(407, 407),  # 根据你的输出尺寸调整
-                 gru_input_dim=256,  # ResNet18 layer3输出是256通道
-                 gru_hidden_dims=[256],
-                 gru_cell_type='standard',
-                 noisy_pose=False, **kwargs):
-        super(InpaintingResNet18WithAttentionRecurrentBase, self).__init__(**kwargs)
-
-        assert aggregation_type in ['pre', 'post', 'none'], aggregation_type
-        self.aggregation_type = aggregation_type
-
-        if aggregation_type != 'none':
-            self.gru = convgru.ConvGRU(input_size=gru_input_size,
-                                       input_dim=gru_input_dim,
-                                       hidden_dim=gru_hidden_dims,
-                                       kernel_size=(3, 3),
-                                       num_layers=len(gru_hidden_dims),
-                                       dtype=torch.cuda.FloatTensor,
-                                       batch_first=True,
-                                       bias=True,
-                                       return_all_layers=True,
-                                       noisy_pose=noisy_pose,
-                                       cell_type=gru_cell_type)
-
-            def get_poses(input_pose):
-                # convert to matrix
-                mat = torch.zeros(input_pose.shape[0], # batch_size
-                                  input_pose.shape[1], # t
-                                  3, 3, dtype=input_pose.dtype,
-                                  device=input_pose.device)
-
-                mat[:, :, 0] = input_pose[:, :, :3]
-                mat[:, :, 1] = input_pose[:, :, 3:6]
-                mat[:, :, 2, 2] = 1.0
-
-                # We are using two GRU cells with the same poses
-                return mat[:, :, None]
-
-            self.get_poses = get_poses
-
-    def forward(self, x, seq_start=None, input_pose=None):
-        n, c, h, w = x[0].shape
-        t = len(x)
-
-        if isinstance(x, list):
-            x = torch.cat(x, dim=0)
-        elif isinstance(x, torch.Tensor):
-            x = x.view((-1,) + x.size()[2:])  # Fuse dim 0 and 1
-
-        if self.aggregation_type != 'none':
-            if seq_start is None:
-                self.hidden_state = None
-            else:
-                # sanity check: only the first index can be True
-                assert(torch.any(seq_start[1:]) == False)
-
-                if seq_start[0]:  # start of a new sequence
-                    self.hidden_state = None
-
-        # ResNet18 forward with attention and GRU
-        if self.aggregation_type == 'pre':
-            # Apply GRU before ResNet
-            layer_output_list, last_state_list = self.gru(x[None],
-                                                          self.get_poses(input_pose[None]),
-                                                          hidden_state=self.hidden_state)
-            x = layer_output_list[-1].squeeze(0)
-
-        # Forward through ResNet18 with attention
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-
-        x1 = self.layer1(x)
-        if self.attention1 is not None:
-            x1 = self.attention1(x1)
-            
-        x = self.layer2(x1)
-        if self.attention2 is not None:
-            x = self.attention2(x)
-            
-        x = self.layer3(x)
-        if self.attention3 is not None:
-            x = self.attention3(x)
-
-        x = self.up1(x, x1)
-        out = self.up2(x)
-
-        if self.aggregation_type == 'post':
-            # Apply GRU after ResNet
-            layer_output_list, last_state_list = self.gru(out[None],
-                                                          self.get_poses(input_pose[None]),
-                                                          hidden_state=self.hidden_state)
-            out = layer_output_list[-1].squeeze(0)
-
-        if self.aggregation_type != 'none':
-            self.hidden_state = []
-            for state in last_state_list:
-                dstate = state[0].detach()
-                dstate.requires_grad = True
-                self.hidden_state.append(dstate)
-
-        num_class = out.shape[1]
-        out = out.reshape((t, n, num_class, h, w))
-        ret_dict = {
-            "bev_preds": out,
-        }
-        return ret_dict
-
-
-class InpaintingResNet18WithAttentionGRU(InpaintingResNet18WithAttentionRecurrentBase, 
-                                         InpaintingResNet18WithAttention):
-    """ResNet18 with attention and GRU for recurrent BEV prediction"""
-    pass
-
-# 在networks.py中添加以下类
 
 class InpaintingFCHardNetSkip1024WithTransformerRecurrentBase(object):
     """Base class for HardNet with Transformer and GRU"""
@@ -1483,4 +1226,27 @@ class InpaintingFCHardNetSkip1024WithTransformerRecurrentBase(object):
 class InpaintingFCHardNetSkip1024WithTransformerGRU(InpaintingFCHardNetSkip1024WithTransformerRecurrentBase,
                                                     InpaintingFCHardNetSkip1024WithTransformer):
     """HardNet with Transformer and GRU for recurrent BEV prediction"""
+    pass
+
+
+
+class InpaintingFCHardNetSkip1024WithCBAM(nn.Module):
+    def __init__(self,
+                 num_class=2,
+                 num_input_features=128,
+                 attention_positions=['after_block2', 'after_block3', 'after_block4', 'decoder_block1', 'before_output'],
+                 attention_reduction=16):
+        super(InpaintingFCHardNetSkip1024WithCBAM, self).__init__()
+        self.fchardnet = HardNet1024SkipWithCBAM(num_input_features, num_class,
+                                                attention_positions=attention_positions,
+                                                attention_reduction=attention_reduction)
+
+    def forward(self, x, *args, **kwargs):
+        out = self.fchardnet(x)
+        ret_dict = {
+            "bev_preds": out,
+        }
+        return ret_dict
+
+class InpaintingFCHardNetSkipWithCBAMGRU512(InpaintingFCHardnetRecurrentBase, InpaintingFCHardNetSkip1024WithCBAM):
     pass
