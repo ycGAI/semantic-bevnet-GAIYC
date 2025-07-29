@@ -1,68 +1,118 @@
 import numpy as np
-import torch
 from sklearn.cluster import DBSCAN
 
 class SimpleHumanDetector:
     def __init__(self, config=None):
+        """
+        初始化人员检测器
+        
+        Args:
+            config: 检测配置字典
+        """
         # 默认参数
         default_config = {
-            'height_range': (1.2, 2.2),
-            'width_range': (0.3, 1.0),
-            'min_points': 50,
-            'ground_threshold': 0.3,
-            'clustering_eps': 0.5,
-            'clustering_min_samples': 10
+            'enabled': True,
+            'height_range': (1.2, 2.2),      # 人体高度范围（米）
+            'width_range': (0.3, 1.0),       # 人体宽度范围（米）
+            'min_points': 50,                # 最少点数
+            'ground_threshold': 0.3,         # 地面高度阈值（米）
+            'clustering_eps': 0.5,           # DBSCAN聚类半径（米）
+            'clustering_min_samples': 10,    # DBSCAN最小样本数
         }
         
-        self.config = config if config else default_config
+        # 合并用户配置
+        if config:
+            default_config.update(config)
+        
+        self.config = default_config
+        self.enabled = self.config.get('enabled', True)
         
     def detect_humans(self, points):
         """
-        输入: points - Nx4 数组 (x, y, z, intensity)
-        输出: human_positions - 检测到的人的位置列表 [(x,y), ...]
+        从点云中检测人员
+        
+        Args:
+            points: Nx4 数组 (x, y, z, intensity)
+            
+        Returns:
+            human_positions: 检测到的人的位置列表 [(x,y), ...]
         """
-        if len(points) == 0:
+        if not self.enabled or len(points) == 0:
             return []
             
-        # 1. 简单地面去除
+        # 1. 简单地面去除 - 保留高度在阈值以上的点
         above_ground = points[points[:, 2] > self.config['ground_threshold']]
         
         if len(above_ground) < self.config['min_points']:
             return []
             
-        # 2. 聚类
-        clustering = DBSCAN(
-            eps=self.config['clustering_eps'], 
-            min_samples=self.config['clustering_min_samples']
-        ).fit(above_ground[:, :3])
+        # 2. DBSCAN聚类
+        try:
+            clustering = DBSCAN(
+                eps=self.config['clustering_eps'], 
+                min_samples=self.config['clustering_min_samples']
+            ).fit(above_ground[:, :3])
+            
+            labels = clustering.labels_
+        except Exception as e:
+            print(f"Clustering failed: {e}")
+            return []
         
-        labels = clustering.labels_
-        
-        # 3. 检查每个聚类
+        # 3. 检查每个聚类是否符合人体特征
         human_positions = []
-        for label in set(labels):
-            if label == -1:  # 噪声点
+        unique_labels = set(labels)
+        
+        for label in unique_labels:
+            if label == -1:  # 跳过噪声点
                 continue
                 
-            cluster_points = above_ground[labels == label]
+            # 获取属于当前聚类的点
+            cluster_mask = labels == label
+            cluster_points = above_ground[cluster_mask]
             
-            # 计算聚类尺寸
-            height = cluster_points[:, 2].max() - cluster_points[:, 2].min()
-            width_x = cluster_points[:, 0].max() - cluster_points[:, 0].min()
-            width_y = cluster_points[:, 1].max() - cluster_points[:, 1].min()
+            if len(cluster_points) < self.config['min_points']:
+                continue
+            
+            # 计算聚类的几何尺寸
+            z_min, z_max = cluster_points[:, 2].min(), cluster_points[:, 2].max()
+            x_min, x_max = cluster_points[:, 0].min(), cluster_points[:, 0].max()
+            y_min, y_max = cluster_points[:, 1].min(), cluster_points[:, 1].max()
+            
+            height = z_max - z_min
+            width_x = x_max - x_min
+            width_y = y_max - y_min
             max_width = max(width_x, width_y)
             
-            # 判断是否为人
+            # 判断是否符合人体尺寸
             height_range = self.config['height_range']
             width_range = self.config['width_range']
             
             if (height_range[0] <= height <= height_range[1] and
-                width_range[0] <= max_width <= width_range[1] and
-                len(cluster_points) >= self.config['min_points']):
+                width_range[0] <= max_width <= width_range[1]):
                 
-                # 记录中心位置
+                # 计算聚类中心位置
                 center_x = cluster_points[:, 0].mean()
                 center_y = cluster_points[:, 1].mean()
                 human_positions.append((center_x, center_y))
                 
         return human_positions
+    
+    def set_params(self, **kwargs):
+        """
+        动态更新检测参数
+        
+        Args:
+            **kwargs: 检测参数，如 height_range, width_range, min_points 等
+        """
+        for key, value in kwargs.items():
+            if key in self.config:
+                self.config[key] = value
+                print(f'Updated detection parameter: {key} = {value}')
+    
+    def enable(self):
+        """启用检测"""
+        self.enabled = True
+        
+    def disable(self):
+        """禁用检测"""
+        self.enabled = False
