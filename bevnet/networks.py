@@ -1,6 +1,6 @@
 import numpy as np
 from bevnet.attention_modules import SEBlock, CBAM, SelfAttention2D, TransformerBlock2D
-from bevnet.fchardnet import HardNet1024Skip, ConvLayer, HarDBlock, HardNet1024SkipWithCBAM
+from bevnet.fchardnet import HardNet1024Skip, ConvLayer, HarDBlock, HardNet1024SkipWithCBAM, TransitionUp, HarDBlock_v2
 import functools
 import torch
 import torch.nn as nn

@@ -9,12 +9,12 @@ DATASET_PATH="/workspace/data/raw_demo_rosbag/bev_res_yc_fin_sl50_str1/sequences
 # bash train_atb4-unknown_single.sh ${EXPERIMENT_DIR}/baseline_no_attention.yaml baseline
 
 # 实验2: 轻量级SE（只在分类器）
-# echo "Training with SE attention in classifier only..."
-# bash train_atb4-unknown_single.sh ${EXPERIMENT_DIR}/se_classifier_only.yaml se_light
+echo "Training with SE attention in classifier only..."
+bash train_atb4-unknown_single.sh ${EXPERIMENT_DIR}/se_classifier_only.yaml se_light
 
 # 实验3: 完整SE注意力
-# echo "Training with full SE attention..."
-# bash train_atb4-unknown_single.sh ${EXPERIMENT_DIR}/se_attention.yaml se_full
+echo "Training with full SE attention..."
+bash train_atb4-unknown_single.sh ${EXPERIMENT_DIR}/se_attention.yaml se_full
 
 # 实验4: CBAM注意力
 # echo "Training with CBAM attention..."

@@ -1138,6 +1138,7 @@ class HardNet1024SkipWithCBAM(nn.Module):
         self.transUpBlocks = nn.ModuleList([])
         self.denseBlocksUp = nn.ModuleList([])
         self.conv1x1_up = nn.ModuleList([])
+        self.decoder_cbam = nn.ModuleList([])  # 单独存储decoder的CBAM
 
         for i in range(n_blocks - 1, -1, -1):
             self.transUpBlocks.append(TransitionUp(prev_block_channels, prev_block_channels))
@@ -1148,11 +1149,16 @@ class HardNet1024SkipWithCBAM(nn.Module):
             blk = HarDBlock(cur_channels_count, gr[i], grmul, n_layers[i])
             self.denseBlocksUp.append(blk)
             
+            # Store output channels after HarDBlock
+            out_ch = blk.get_out_ch()
+            
             # Add CBAM in decoder if specified
             if f'decoder_block{n_blocks-1-i}' in attention_positions:
-                self.denseBlocksUp.append(CBAM(blk.get_out_ch(), reduction=attention_reduction))
+                self.decoder_cbam.append(CBAM(out_ch, reduction=attention_reduction))
+            else:
+                self.decoder_cbam.append(nn.Identity())
                 
-            prev_block_channels = blk.get_out_ch()
+            prev_block_channels = out_ch
             cur_channels_count = prev_block_channels
 
         # 2x upsample
@@ -1169,6 +1175,18 @@ class HardNet1024SkipWithCBAM(nn.Module):
                                    out_channels=n_classes, kernel_size=1, stride=1,
                                    padding=0, bias=True)
 
+    def v2_transform(self, trt=False):
+        for i in range(len(self.base)):
+            if isinstance(self.base[i], HarDBlock):
+                blk = self.base[i]
+                self.base[i] = HarDBlock_v2(blk.in_channels, blk.growth_rate, blk.grmul, blk.n_layers)
+                self.base[i].transform(blk, trt)
+
+        for i in range(self.n_blocks):
+            blk = self.denseBlocksUp[i]
+            self.denseBlocksUp[i] = HarDBlock_v2(blk.in_channels, blk.growth_rate, blk.grmul, blk.n_layers)
+            self.denseBlocksUp[i].transform(blk, trt)
+
     def forward(self, x):
         skip_connections = []
         size_in = x.size()
@@ -1184,19 +1202,12 @@ class HardNet1024SkipWithCBAM(nn.Module):
             skip = skip_connections.pop()
             out = self.transUpBlocks[i](out, skip, True)
             out = self.conv1x1_up[i](out)
-            
-            # Apply HarDBlock
-            out = self.denseBlocksUp[i*2](out)  # HarDBlock
-            
-            # Apply CBAM if it exists (we append it after HarDBlock)
-            if i*2+1 < len(self.denseBlocksUp) and isinstance(self.denseBlocksUp[i*2+1], CBAM):
-                out = self.denseBlocksUp[i*2+1](out)
+            out = self.denseBlocksUp[i](out)
+            out = self.decoder_cbam[i](out)  # 应用CBAM或Identity
 
         out = F.relu(self.final_upsample(out, output_size=(out.size(0), out.size(1)) + size_in[2:4]))
-
         out = torch.cat([inputs, out], dim=1)
         
-        # Apply final CBAM if specified
         if self.pre_final_cbam is not None:
             out = self.pre_final_cbam(out)
             
