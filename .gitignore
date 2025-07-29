@@ -127,4 +127,15 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-/experiments/atb4/single/default---batch_size=4-logs/
+/experiments/atb4/single/default---batch_size=1-logs/
+/experiments/atb4/single/se_attention---batch_size=1-logs/
+/experiments/atb4/single/se_classifier_only---batch_size=1-logs/
+/experiments/atb4/single/se_self_attention---batch_size=1-logs/
+/experiments/atb4/single/self_attention---batch_size=1-logs/
+/experiments/atb4/recurrent/default---n_frame=2-logs/
+/experiments/atb4/recurrent/se_attention---n_frame=2-logs/
+/experiments/atb4/recurrent/se_classifier_only---n_frame=2-logs/
+/experiments/atb4/recurrent/se_self_attention---n_frame=2-logs/
+/experiments/atb4/recurrent/self_attention---n_frame=2-logs/
+/experiments/atb4/single/cbam_attention---batch_size=1-logs/
+/experiments/atb4/recurrent/cbam_attention---n_frame=2-logs/

@@ -11,7 +11,7 @@ def add_common_arguments(parser):
     parser.add_argument('-n', '--num_workers', type=int, default=0, help='Dataloader num_workers.')
     parser.add_argument('--log_interval',
         type=int, default=1, help='Log every this number of iterations.')
-    parser.add_argument('--epochs', type=int, default=15, help='Number of training epochs.')
+    parser.add_argument('--epochs', type=int, default=30, help='Number of training epochs.')
     parser.add_argument('--dataset_type', type=str, default='costmap_4',
         help='Dataset type (mainly for visualization purposes). Could be "costmap_4" or "kitti_19"')
     parser.add_argument('--include_unknown', action='store_true', default=False,
