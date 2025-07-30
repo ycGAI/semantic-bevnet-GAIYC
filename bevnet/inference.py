@@ -463,14 +463,14 @@ if __name__ == '__main__':
     
     # 创建带安全检测的模型
     model = BEVNetSingleWithSafety(
-        '/workspace/bevnet/experiments/rellis4_100/single/default---batch_size=1-logs/best.pth.8',
+        '/workspace/bevnet/experiments/atb4/single/default---batch_size=1-logs/best.pth.41',
         device='cuda',
         human_detection_config=human_detection_config,
         safety_config=safety_config
     )
     
     # 加载点云数据
-    scan = np.fromfile('/workspace/data/rellis_3d/dataset/sequences/00000/velodyne/000000_with_humans.bin', dtype=np.float32)
+    scan = np.fromfile('/workspace/data/raw_demo_rosbag/bev_res_yc_fin_sl50tr1/sequences/train/velodyne/000000_with_humans.bin', dtype=np.float32)
     scan = scan.reshape(-1, 4)
     
     # 获取预测结果

@@ -111,7 +111,7 @@ def add_humans_to_point_cloud(original_points, human_positions, num_points_per_h
 # 主程序
 if __name__ == '__main__':
     # 1. 加载原始点云
-    original_file = '/workspace/data/rellis_3d/dataset/sequences/00000/velodyne/000000.bin'
+    original_file = '/workspace/data/raw_demo_rosbag/bev_res_yc_fin_sl50tr1/sequences/train/velodyne/00000.bin'
     original_points = np.fromfile(original_file, dtype=np.float32).reshape(-1, 4)
     print(f"Original point cloud: {len(original_points)} points")
     
@@ -131,7 +131,7 @@ if __name__ == '__main__':
     print(f"Combined point cloud: {len(combined_points)} points")
     
     # 4. 保存新的点云文件
-    output_file = '/workspace/data/rellis_3d/dataset/sequences/00000/velodyne/000000_with_humans.bin'
+    output_file = '/workspace/data/raw_demo_rosbag/bev_res_yc_fin_sl50tr1/sequences/train/velodyne/000000_with_humans.bin'
     combined_points.astype(np.float32).tofile(output_file)
     print(f"Saved to: {output_file}")
     
