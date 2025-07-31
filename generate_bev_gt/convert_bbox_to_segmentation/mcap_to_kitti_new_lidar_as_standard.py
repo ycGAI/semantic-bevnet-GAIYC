@@ -650,9 +650,7 @@ class MCAPToKITTIOdometryConverter:
         print(f"📝 生成KITTI标定文件: {calib_file}")
         
         with open(calib_file, 'w') as f:
-            f.write("# KITTI Calibration File\n")
-            f.write("# Generated from MCAP bag file with real calibration data\n")
-            f.write(f"# Source: {self.input_bag}\n\n")
+
             
             # 写入相机投影矩阵
             camera_mapping = {
@@ -682,8 +680,6 @@ class MCAPToKITTIOdometryConverter:
                 f.write("P3: 7.215377e+02 0.000000e+00 6.095593e+02 -3.875744e+02 0.000000e+00 7.215377e+02 1.728540e+02 0.000000e+00 0.000000e+00 0.000000e+00 1.000000e+00 0.000000e+00\n\n")
                 print("⚠️  没有找到相机标定，使用模板数据")
             
-            # 写入传感器变换矩阵
-            f.write("# Sensor transformations\n")
             
             # 查找激光雷达到相机的变换
             if self.tf_tree:
@@ -693,7 +689,6 @@ class MCAPToKITTIOdometryConverter:
                 
                 if lidar_to_cam is not None:
                     tr_matrix = lidar_to_cam[:3, :].flatten()  # 取前3行
-                    f.write(f"# Velodyne to Camera transformation (computed from TF tree)\n")
                     f.write(f"Tr: {' '.join(f'{val:.6e}' for val in tr_matrix)}\n\n")
                     print("✅ 使用计算得到的真实变换")
                 else:
@@ -708,12 +703,12 @@ class MCAPToKITTIOdometryConverter:
             # 写入内参矩阵（如果有）
             for camera_name, camera_data in self.camera_info.items():
                 if camera_data['K'] is not None:
-                    f.write(f"# {camera_name} intrinsic matrix\n")
+                    # f.write(f"# {camera_name} intrinsic matrix\n")
                     k_matrix = camera_data['K'].flatten()
                     f.write(f"K_{camera_name}: {' '.join(f'{val:.6e}' for val in k_matrix)}\n")
                     
                     if camera_data['D'] is not None:
-                        f.write(f"# {camera_name} distortion coefficients\n") 
+                        # f.write(f"# {camera_name} distortion coefficients\n") 
                         d_coeffs = camera_data['D']
                         f.write(f"D_{camera_name}: {' '.join(f'{val:.6e}' for val in d_coeffs)}\n")
                     f.write("\n")
