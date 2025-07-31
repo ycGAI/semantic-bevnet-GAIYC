@@ -37,13 +37,12 @@ class MCAPToKITTIOdometryConverter:
         self.poses_data = []
         self.camera_data = []
         self.lidar_data = []
-        self.timestamps = []
         
         # 标定数据存储
         self.camera_info = {}
         self.tf_tree = {}
         
-        # 新增：时间同步相关
+        # 时间同步相关
         self.time_tolerance_ns = 50_000_000  # 50ms容差
         self.pose_timestamp_map = {}  # timestamp -> pose_data 映射
         
@@ -300,7 +299,6 @@ class MCAPToKITTIOdometryConverter:
         poses = []
         cameras = []
         lidars = []
-        timestamps = []
         pose_timestamp_map = {}  # 局部位姿时间戳映射
         
         for topic, data, timestamp, msg_type_name in message_batch:
@@ -317,29 +315,24 @@ class MCAPToKITTIOdometryConverter:
                     if pose_data:
                         poses.append(pose_data)
                         pose_timestamp_map[timestamp] = pose_data
-                        timestamps.append(timestamp)
                 
                 # 处理相机数据
                 elif any(keyword in topic.lower() for keyword in ['image', 'camera']):
                     camera_data = self.extract_camera_data(msg, timestamp, topic)
                     if camera_data:
                         cameras.append(camera_data)
-                        if timestamp not in timestamps:
-                            timestamps.append(timestamp)
                 
                 # 处理激光雷达数据
                 elif any(keyword in topic.lower() for keyword in ['velodyne', 'lidar', 'pointcloud', 'points']):
                     lidar_data = self.extract_lidar_data(msg, timestamp)
                     if lidar_data:
                         lidars.append(lidar_data)
-                        if timestamp not in timestamps:
-                            timestamps.append(timestamp)
                         
             except Exception as e:
                 print(f"⚠️  处理消息失败 {topic}: {e}")
                 continue
         
-        return poses, cameras, lidars, sorted(set(timestamps)), pose_timestamp_map
+        return poses, cameras, lidars, pose_timestamp_map
 
     def extract_pose_data(self, msg, timestamp):
         """提取位姿数据"""
@@ -416,7 +409,7 @@ class MCAPToKITTIOdometryConverter:
 
     def synchronize_with_lidar(self):
         """
-        新增：以LiDAR为基准进行时间同步
+        以LiDAR为基准进行时间同步
         确保位姿数据与LiDAR帧一一对应
         """
         print(f"\n⏱️  开始时间同步 (容差: {self.time_tolerance_ns/1e6:.0f}ms)...")
@@ -433,7 +426,6 @@ class MCAPToKITTIOdometryConverter:
         
         # 为每个LiDAR帧寻找最近的位姿
         synchronized_poses = []
-        synchronized_timestamps = []
         pose_miss_count = 0
         
         for lidar_ts in lidar_timestamps:
@@ -446,7 +438,6 @@ class MCAPToKITTIOdometryConverter:
                 # 找到匹配的位姿
                 pose_data = self.pose_timestamp_map[nearest_pose_ts]
                 synchronized_poses.append(pose_data)
-                synchronized_timestamps.append(lidar_ts)  # 使用LiDAR时间戳
             else:
                 # 没有找到匹配的位姿，使用单位矩阵
                 identity_pose = np.eye(4)[:3, :].flatten()
@@ -456,16 +447,10 @@ class MCAPToKITTIOdometryConverter:
                     'position': (0.0, 0.0, 0.0),
                     'orientation': (0.0, 0.0, 0.0, 1.0)
                 })
-                synchronized_timestamps.append(lidar_ts)
                 pose_miss_count += 1
         
         # 更新位姿数据为同步后的数据
         self.poses_data = synchronized_poses
-        
-        # 更新时间戳为LiDAR基准的时间戳
-        lidar_timestamps_set = set(lidar_timestamps)
-        camera_timestamps = [cd['timestamp'] for cd in self.camera_data]
-        self.timestamps = sorted(lidar_timestamps_set.union(set(camera_timestamps)))
         
         print(f"✅ 时间同步完成:")
         print(f"   同步位姿: {len(synchronized_poses)}")
@@ -666,14 +651,11 @@ class MCAPToKITTIOdometryConverter:
                     if camera_data['P'] is not None:
                         p_name = camera_mapping.get(camera_name, f'P{i}')
                         p_matrix = camera_data['P'].flatten()
-                        f.write(f"# {camera_name} ({camera_data['topic']})\n")
-                        f.write(f"# Resolution: {camera_data['width']}x{camera_data['height']}\n")
                         f.write(f"{p_name}: {' '.join(f'{val:.6e}' for val in p_matrix)}\n\n")
                 
                 print(f"✅ 使用提取的 {len(self.camera_info)} 个相机标定")
             else:
                 # 没有真实标定数据时使用模板
-                f.write("# Camera projection matrices (TEMPLATE - no real calibration found)\n")
                 f.write("P0: 7.215377e+02 0.000000e+00 6.095593e+02 0.000000e+00 0.000000e+00 7.215377e+02 1.728540e+02 0.000000e+00 0.000000e+00 0.000000e+00 1.000000e+00 0.000000e+00\n")
                 f.write("P1: 7.215377e+02 0.000000e+00 6.095593e+02 -3.875744e+02 0.000000e+00 7.215377e+02 1.728540e+02 0.000000e+00 0.000000e+00 0.000000e+00 1.000000e+00 0.000000e+00\n")
                 f.write("P2: 7.215377e+02 0.000000e+00 6.095593e+02 0.000000e+00 0.000000e+00 7.215377e+02 1.728540e+02 0.000000e+00 0.000000e+00 0.000000e+00 1.000000e+00 0.000000e+00\n")
@@ -692,11 +674,9 @@ class MCAPToKITTIOdometryConverter:
                     f.write(f"Tr: {' '.join(f'{val:.6e}' for val in tr_matrix)}\n\n")
                     print("✅ 使用计算得到的真实变换")
                 else:
-                    f.write("# Velodyne to Camera transformation (template - TF chain incomplete)\n")
                     f.write("Tr: 4.276802385584e-04 -9.999672484946e-01 -8.084491683471e-03 -1.198459927713e-02 -7.210626507497e-03 8.081198471645e-03 -9.999413164504e-01 -5.403984729748e-02 9.999738645903e-01 4.859485810390e-04 -7.206933692422e-03 -2.921968648686e-01\n\n")
                     print("⚠️  TF链不完整，使用模板变换")
             else:
-                f.write("# Velodyne to Camera transformation (template - no TF data found)\n")
                 f.write("Tr: 4.276802385584e-04 -9.999672484946e-01 -8.084491683471e-03 -1.198459927713e-02 -7.210626507497e-03 8.081198471645e-03 -9.999413164504e-01 -5.403984729748e-02 9.999738645903e-01 4.859485810390e-04 -7.206933692422e-03 -2.921968648686e-01\n\n")
                 print("⚠️  没有找到TF数据，使用模板变换")
             
@@ -765,24 +745,19 @@ class MCAPToKITTIOdometryConverter:
             ))
         
         # 合并结果
-        all_timestamps = set()
-        for poses, cameras, lidars, timestamps, pose_ts_map in results:
+        for poses, cameras, lidars, pose_ts_map in results:
             self.poses_data.extend(poses)
             self.camera_data.extend(cameras)
             self.lidar_data.extend(lidars)
-            all_timestamps.update(timestamps)
             # 合并位姿时间戳映射
             self.pose_timestamp_map.update(pose_ts_map)
-        
-        self.timestamps = list(all_timestamps)
         
         print(f"📊 原始数据统计:")
         print(f"   位姿: {len(self.poses_data)}")
         print(f"   相机: {len(self.camera_data)}")
         print(f"   激光雷达: {len(self.lidar_data)}")
-        print(f"   时间戳: {len(self.timestamps)}")
         
-        # 🔥 关键新增：时间同步处理
+        # 时间同步处理
         self.synchronize_with_lidar()
         
         print(f"📊 同步后数据统计:")
