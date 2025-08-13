@@ -1,0 +1,27 @@
+VoxelFeatureEncoder:
+  class: VoxelFeatureExtractorV3
+  opt: none
+
+MiddleSparseEncoder:
+  class: SpMiddleNoDownsampleXY
+  net_kwargs:
+    output_shape: [1, 30, 407, 407, 16]
+    num_input_features: 4
+  opt: Adam
+  opt_kwargs:
+    lr: 3.0e-4
+    eps: 1.0e-5
+
+BEVClassifier:
+  class: InpaintingFCHardNetSkip1024WithDeformable
+  net_kwargs:
+    num_class: 5
+    num_input_features: 192
+    use_deformable_encoder: true
+    use_deformable_decoder: true
+    deformable_encoder_positions: [2, 3, 4]  # 在深层使用
+    deformable_decoder_positions: [0, 1]     # 在前两个decoder块使用
+  opt: Adam
+  opt_kwargs:
+    lr: 3.0e-4
+    eps: 1.0e-5

@@ -1250,3 +1250,41 @@ class InpaintingFCHardNetSkip1024WithCBAM(nn.Module):
 
 class InpaintingFCHardNetSkipWithCBAMGRU512(InpaintingFCHardnetRecurrentBase, InpaintingFCHardNetSkip1024WithCBAM):
     pass
+
+
+# 在文件顶部添加导入
+from bevnet.fchardnet import HardNet1024SkipWithDeformable
+
+# 添加新的网络类
+class InpaintingFCHardNetSkip1024WithDeformable(nn.Module):
+    """FChardNet with Deformable Convolutions"""
+    def __init__(self,
+                 num_class=2,
+                 num_input_features=128,
+                 use_deformable_encoder=True,
+                 use_deformable_decoder=True,
+                 deformable_encoder_positions=[2, 3, 4],
+                 deformable_decoder_positions=[0, 1]):
+        super(InpaintingFCHardNetSkip1024WithDeformable, self).__init__()
+        
+        self.fchardnet = HardNet1024SkipWithDeformable(
+            num_input_features, 
+            num_class,
+            use_deformable_encoder=use_deformable_encoder,
+            use_deformable_decoder=use_deformable_decoder,
+            deformable_encoder_positions=deformable_encoder_positions,
+            deformable_decoder_positions=deformable_decoder_positions
+        )
+
+    def forward(self, x, *args, **kwargs):
+        out = self.fchardnet(x)
+        ret_dict = {
+            "bev_preds": out,
+        }
+        return ret_dict
+
+# 如果需要支持GRU的版本
+class InpaintingFCHardNetSkip1024WithDeformableGRU(InpaintingFCHardnetRecurrentBase, 
+                                                   InpaintingFCHardNetSkip1024WithDeformable):
+    """FChardNet with Deformable Convolutions and GRU for temporal aggregation"""
+    pass

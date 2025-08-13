@@ -1213,3 +1213,231 @@ class HardNet1024SkipWithCBAM(nn.Module):
             
         out = self.finalConv(out)
         return out
+
+# 在文件顶部添加导入
+from bevnet.deformable_conv import DeformableConv2d
+
+# 添加新的HarDBlock变体
+class HarDBlockWithDeformable(nn.Module):
+    """HarDBlock with Deformable Convolution"""
+    def __init__(self, in_channels, growth_rate, grmul, n_layers, 
+                 keepBase=False, residual_out=False, bn=False,
+                 use_deformable_positions=None):
+        super().__init__()
+        self.in_channels = in_channels
+        self.growth_rate = growth_rate
+        self.grmul = grmul
+        self.n_layers = n_layers
+        
+        self.links = []
+        layers_ = []
+        self.out_channels = 0
+        
+        for i in range(n_layers):
+            outch, inch, link = self.get_link(i+1, in_channels, growth_rate, grmul)
+            self.links.append(link)
+            
+            # 在指定位置使用deformable卷积
+            if use_deformable_positions and i in use_deformable_positions:
+                layers_.append(DeformableConv2d(inch, outch, kernel_size=3, padding=1, bias=False))
+            else:
+                layers_.append(nn.Conv2d(inch, outch, kernel_size=3, padding=1, bias=False))
+        
+        self.out_channels = in_channels
+        for i in range(len(layers_)):
+            ch, _, _ = self.get_link(i+1, in_channels, growth_rate, grmul)
+            self.out_channels += ch
+        
+        self.layers = nn.ModuleList(layers_)
+        
+    def get_link(self, layer, base_ch, growth_rate, grmul):
+        if layer == 0:
+            return base_ch, 0, []
+        out_channels = growth_rate
+        link = []
+        for i in range(10):
+            dv = 2 ** i
+            if layer % dv == 0:
+                k = layer - dv
+                link.insert(0, k)
+                if i > 0:
+                    out_channels *= grmul
+        out_channels = int(int(out_channels + 1) / 2) * 2
+        in_channels = 0
+        for i in link:
+            ch, _, _ = self.get_link(i, base_ch, growth_rate, grmul)
+            in_channels += ch
+        return out_channels, in_channels, link
+    
+    def get_out_ch(self):
+        return self.out_channels
+    
+    def forward(self, x):
+        layers_ = [x]
+        for layer in range(len(self.layers)):
+            link = self.links[layer]
+            tin = []
+            for i in link:
+                tin.append(layers_[i])
+            if len(tin) > 1:
+                x = torch.cat(tin, 1)
+            else:
+                x = tin[0]
+            out = self.layers[layer](x)
+            layers_.append(out)
+        
+        t = len(layers_)
+        out_ = []
+        for i in range(t):
+            if i == 0 or i == t - 1:
+                out_.append(layers_[i])
+            else:
+                _, _, link = self.get_link(i, self.in_channels, self.growth_rate, self.grmul)
+                if len(link) == 0:
+                    out_.append(layers_[i])
+        
+        out = torch.cat(out_, 1)
+        return out
+
+
+# 添加带Deformable的HardNet1024Skip
+class HardNet1024SkipWithDeformable(nn.Module):
+    """HardNet1024Skip with Deformable Convolutions"""
+    def __init__(self, input_ch, n_classes=19,
+                 use_deformable_encoder=True,
+                 use_deformable_decoder=True,
+                 deformable_encoder_positions=[2, 3, 4],  # 在哪些encoder块使用
+                 deformable_decoder_positions=[0, 1]):     # 在哪些decoder块使用
+        super(HardNet1024SkipWithDeformable, self).__init__()
+        
+        ch_list = [32, 64, 96, 128, 160]
+        grmul = 1.7
+        gr = [10, 16, 18, 24, 32]
+        n_layers = [4, 4, 8, 8, 8]
+        
+        blks = len(n_layers)
+        self.shortcut_layers = []
+        
+        self.base = nn.ModuleList([])
+        self.predownsample_ch = 32
+        self.base.append(ConvLayer(in_channels=input_ch, out_channels=self.predownsample_ch,
+                                   kernel=3, stride=2))
+        
+        skip_connection_channel_counts = []
+        ch = 32
+        
+        # Encoder路径
+        for i in range(blks):
+            # 决定是否在这个块使用deformable
+            if use_deformable_encoder and i in deformable_encoder_positions:
+                blk = HarDBlockWithDeformable(ch, gr[i], grmul, n_layers[i],
+                                             use_deformable_positions=[n_layers[i]//2, n_layers[i]-1])
+            else:
+                blk = HarDBlock(ch, gr[i], grmul, n_layers[i])
+            
+            ch = blk.get_out_ch()
+            skip_connection_channel_counts.append(ch)
+            self.base.append(blk)
+            
+            if i < blks - 1:
+                self.shortcut_layers.append(len(self.base) - 1)
+            
+            self.base.append(ConvLayer(ch, ch_list[i], kernel=1))
+            ch = ch_list[i]
+            
+            # 在特定层后添加deformable refinement
+            if use_deformable_encoder and i in deformable_encoder_positions and i < blks - 1:
+                self.base.append(DeformableConv2d(ch, ch, kernel_size=3, padding=1))
+                self.base.append(nn.BatchNorm2d(ch))
+                self.base.append(nn.ReLU(inplace=True))
+            
+            if i < blks - 1:
+                self.base.append(nn.AvgPool2d(kernel_size=2, stride=2))
+        
+        cur_channels_count = ch
+        prev_block_channels = ch
+        n_blocks = blks - 1
+        self.n_blocks = n_blocks
+        
+        # Decoder路径
+        self.transUpBlocks = nn.ModuleList([])
+        self.denseBlocksUp = nn.ModuleList([])
+        self.conv1x1_up = nn.ModuleList([])
+        self.deform_refine = nn.ModuleList([])  # Deformable refinement layers
+        
+        for i in range(n_blocks - 1, -1, -1):
+            self.transUpBlocks.append(TransitionUp(prev_block_channels, prev_block_channels))
+            cur_channels_count = prev_block_channels + skip_connection_channel_counts[i]
+            
+            # 在skip connection融合后使用deformable
+            if use_deformable_decoder and (n_blocks - 1 - i) in deformable_decoder_positions:
+                self.conv1x1_up.append(nn.Sequential(
+                    ConvLayer(cur_channels_count, cur_channels_count // 2, kernel=1),
+                    DeformableConv2d(cur_channels_count // 2, cur_channels_count // 2, 
+                                   kernel_size=3, padding=1),
+                    nn.BatchNorm2d(cur_channels_count // 2),
+                    nn.ReLU(inplace=True)
+                ))
+            else:
+                self.conv1x1_up.append(ConvLayer(cur_channels_count, cur_channels_count // 2, kernel=1))
+            
+            cur_channels_count = cur_channels_count // 2
+            
+            # Decoder中的HarDBlock
+            if use_deformable_decoder and (n_blocks - 1 - i) in deformable_decoder_positions:
+                blk = HarDBlockWithDeformable(cur_channels_count, gr[i], grmul, n_layers[i],
+                                             use_deformable_positions=[n_layers[i]//2])
+            else:
+                blk = HarDBlock(cur_channels_count, gr[i], grmul, n_layers[i])
+            
+            self.denseBlocksUp.append(blk)
+            prev_block_channels = blk.get_out_ch()
+            cur_channels_count = prev_block_channels
+        
+        # 最终上采样
+        self.final_upsample = nn.ConvTranspose2d(cur_channels_count, cur_channels_count, 3,
+                                                 stride=2, padding=1)
+        
+        # 可选：在最终输出前添加deformable refinement
+        if use_deformable_decoder:
+            self.final_deform = DeformableConv2d(
+                cur_channels_count + input_ch,
+                cur_channels_count + input_ch,
+                kernel_size=3,
+                padding=1
+            )
+        else:
+            self.final_deform = None
+        
+        self.finalConv = nn.Conv2d(in_channels=cur_channels_count + input_ch,
+                                   out_channels=n_classes, kernel_size=1, stride=1,
+                                   padding=0, bias=True)
+    
+    def forward(self, x):
+        skip_connections = []
+        size_in = x.size()
+        inputs = x
+        
+        # Encoder前向传播
+        for i in range(len(self.base)):
+            x = self.base[i](x)
+            if i in self.shortcut_layers:
+                skip_connections.append(x)
+        out = x
+        
+        # Decoder前向传播
+        for i in range(self.n_blocks):
+            skip = skip_connections.pop()
+            out = self.transUpBlocks[i](out, skip, True)
+            out = self.conv1x1_up[i](out)
+            out = self.denseBlocksUp[i](out)
+        
+        out = F.relu(self.final_upsample(out, output_size=(out.size(0), out.size(1)) + size_in[2:4]))
+        out = torch.cat([inputs, out], dim=1)
+        
+        # 应用最终的deformable refinement
+        if self.final_deform is not None:
+            out = self.final_deform(out)
+        
+        out = self.finalConv(out)
+        return out
