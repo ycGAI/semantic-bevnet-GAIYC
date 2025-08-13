@@ -31,9 +31,7 @@ python ../bevnet/train_single.py \
     --lr_decay=0.8 \
     --progressive_deformable \
     --warmup_epochs=5 \
-    --deform_lr_factor=0.05 \
-    --progressive_layers \
-    --encoder_only_epochs=3 \
-    --grad_clip=10.0 \
+    --deform_lr_factor=0.1 \
+    --grad_clip=5.0 \
     --save_checkpoint_every=5 \
     "${@:3}"

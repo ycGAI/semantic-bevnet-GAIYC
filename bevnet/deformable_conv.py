@@ -55,7 +55,7 @@ class DeformableConv2d(nn.Module):
         nn.init.constant_(self.offset_conv.bias, 0)
         
         if self.modulated:
-            # 调制权重初始化为1
+            # 调制权重初始化为0
             nn.init.constant_(self.modulator_conv.weight, 0)
             nn.init.constant_(self.modulator_conv.bias, 0)
         
@@ -88,7 +88,8 @@ class DeformableConv2d(nn.Module):
         # 创建基础网格
         grid_y, grid_x = torch.meshgrid(
             torch.arange(h, dtype=torch.float32, device=x.device),
-            torch.arange(w, dtype=torch.float32, device=x.device)
+            torch.arange(w, dtype=torch.float32, device=x.device),
+            indexing='ij'  # 添加这个参数避免警告
         )
         grid = torch.stack([grid_x, grid_y], dim=-1)  # h x w x 2
         grid = grid.unsqueeze(0).expand(b, -1, -1, -1)  # b x h x w x 2
@@ -99,14 +100,16 @@ class DeformableConv2d(nn.Module):
         offset_y = offset[..., 1::2]
         
         # 应用偏移量（简化版本，只使用中心偏移）
-        grid_offset = grid + torch.stack([
+        # 添加一个缩放因子来控制偏移量的大小
+        offset_scale = 0.1  # 限制偏移量的范围
+        grid_offset = grid + offset_scale * torch.stack([
             offset_x[..., self.kernel_size*self.kernel_size//2],
             offset_y[..., self.kernel_size*self.kernel_size//2]
         ], dim=-1)
         
         # 归一化到[-1, 1]
-        grid_offset[..., 0] = 2.0 * grid_offset[..., 0] / (w - 1) - 1.0
-        grid_offset[..., 1] = 2.0 * grid_offset[..., 1] / (h - 1) - 1.0
+        grid_offset[..., 0] = 2.0 * grid_offset[..., 0] / max(w - 1, 1) - 1.0
+        grid_offset[..., 1] = 2.0 * grid_offset[..., 1] / max(h - 1, 1) - 1.0
         
         # 使用grid_sample进行采样
         x_sampled = F.grid_sample(x, grid_offset, mode='bilinear', padding_mode='zeros', align_corners=False)
@@ -114,6 +117,6 @@ class DeformableConv2d(nn.Module):
         if modulator is not None:
             # 应用调制权重
             modulator = modulator.mean(dim=1, keepdim=True)  # 简化：平均所有kernel位置
-            x_sampled = x_sampled * modulator
+            x_sampled = x_sampled * (1 + modulator)  # 使用残差形式
         
         return x_sampled

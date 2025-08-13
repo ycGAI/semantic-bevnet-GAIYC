@@ -19,8 +19,8 @@ BEVClassifier:
     num_input_features: 192
     use_deformable_encoder: true
     use_deformable_decoder: true
-    deformable_encoder_positions: [2, 3, 4]  # 在深层使用
-    deformable_decoder_positions: [0, 1]     # 在前两个decoder块使用
+    deformable_encoder_positions: [3, 4]  # 只在深层使用
+    deformable_decoder_positions: [0, 1]  # 在前两个decoder块使用
   opt: Adam
   opt_kwargs:
     lr: 3.0e-4
