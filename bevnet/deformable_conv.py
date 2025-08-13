@@ -85,12 +85,21 @@ class DeformableConv2d(nn.Module):
         """简化的deformable采样实现"""
         b, c, h, w = x.shape
         
-        # 创建基础网格
-        grid_y, grid_x = torch.meshgrid(
-            torch.arange(h, dtype=torch.float32, device=x.device),
-            torch.arange(w, dtype=torch.float32, device=x.device),
-            indexing='ij'  # 添加这个参数避免警告
-        )
+        # 创建基础网格 - 修复PyTorch版本兼容性问题
+        try:
+            # PyTorch >= 1.10.0
+            grid_y, grid_x = torch.meshgrid(
+                torch.arange(h, dtype=torch.float32, device=x.device),
+                torch.arange(w, dtype=torch.float32, device=x.device),
+                indexing='ij'
+            )
+        except TypeError:
+            # PyTorch < 1.10.0 - 旧版本不支持indexing参数，默认就是'ij'
+            grid_y, grid_x = torch.meshgrid(
+                torch.arange(h, dtype=torch.float32, device=x.device),
+                torch.arange(w, dtype=torch.float32, device=x.device)
+            )
+        
         grid = torch.stack([grid_x, grid_y], dim=-1)  # h x w x 2
         grid = grid.unsqueeze(0).expand(b, -1, -1, -1)  # b x h x w x 2
         
