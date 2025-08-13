@@ -487,41 +487,23 @@ def train_single(nets, net_opts, g):
             loss.backward()
 
             if g.log_interval > 0 and i % g.log_interval == 0:
-                # 打印学习率信息（包括不同参数组）
-                print('\nLearning rates:')
-                for name, opt in net_opts.items():
-                    if hasattr(opt, 'param_groups'):
-                        if len(opt.param_groups) > 1:
-                            for idx, pg in enumerate(opt.param_groups):
-                                param_count = sum(p.numel() for p in pg['params'] if p.requires_grad)
-                                print(f"  {name} group {idx}: lr={pg['lr']:.2e}, params={param_count:,}")
-                        else:
-                            print(f"  {name}: lr={opt.param_groups[0]['lr']:.2e}")
+                print('learning rate:\n%s' % tabulate.tabulate([
+                    (name, opt.param_groups[0]['lr']) for name, opt in net_opts.items()]))
 
                 n_iter = (epoch - 1) * len(trainloader) + i + 1
                 writer.add_scalar('Train/loss', loss.item(), n_iter)
-                
-                # 记录不同参数组的学习率
-                for name, opt in net_opts.items():
-                    if hasattr(opt, 'param_groups'):
-                        for idx, pg in enumerate(opt.param_groups):
-                            writer.add_scalar(f'Train/lr_{name}_group{idx}', pg['lr'], n_iter)
-                
-                itr.set_description(f"Epoch {epoch} | Train loss: {loss.item():.4f}")
-                loss_avg.append(loss.item())
+                itr.set_description("train loss: %3f" % loss.item())
+                loss_avg += [loss.item()]
 
-                # 可视化预测结果
                 tfu.visualize_predictions(writer,
                                           pred.data.cpu().numpy(),
                                           label.cpu().numpy(),
                                           g.dataset_type)
 
-                # 打印权重和梯度统计
-                if i % (g.log_interval * 10) == 0:  # 减少打印频率
-                    for name, net in nets.items():
-                        print(f'\n{name} weights:\n{tfu.module_weights_stats(net)}')
-                    for name, net in nets.items():
-                        print(f'{name} grad:\n{tfu.module_grad_stats(net)}')
+                for name, net in nets.items():
+                    print('%s weights:\n%s' % (name, tfu.module_weights_stats(net)))
+                for name, net in nets.items():
+                    print('%s grad:\n%s' % (name, tfu.module_grad_stats(net)))
 
             for _, opt in net_opts.items():
                 opt.step()
@@ -561,32 +543,26 @@ def train_single(nets, net_opts, g):
             with torch.no_grad():
                 pred_, loss_ = step(nets, inputs, labels=label, criterion=criterion)
 
-            loss.append(float(loss_))
+            loss += [float(loss_)]
             pred = pred_.argmax(dim=1)
             evaluator.append(pred, label)
-            itr.set_description(f"Val | Acc: {evaluator.acc():.3f}, mIoU: {evaluator.meanIoU():.3f}")
+            itr.set_description("Acc: %3f, IoUMean: %3f" % (evaluator.acc(),
+                                                            evaluator.meanIoU()))
 
         loss_avg = np.array(loss).mean()
 
-        # Logging validation metrics
+        # logging
         writer.add_scalar('Val/loss', loss_avg.item(), n_iter)
 
         cw_iou = evaluator.classwiseIoU()
         cw_acc = evaluator.classwiseAcc()
 
-        for cls, (ciou, cacc) in enumerate(zip(cw_iou, cw_acc)):
-            writer.add_scalar(f'Val/iou_class{cls}', ciou, n_iter)
-            writer.add_scalar(f'Val/acc_class{cls}', cacc, n_iter)
+        for cls, (ciou, cacc) in enumerate(zip(cw_iou, cw_iou)):
+            writer.add_scalar('Val/iou_class{}'.format(cls), ciou, n_iter)
+            writer.add_scalar('Val/acc_class{}'.format(cls), cacc, n_iter)
 
         writer.add_scalar('Val/iou', np.nanmean(cw_iou), n_iter)
         writer.add_scalar('Val/acc', np.nanmean(cw_acc), n_iter)
-        
-        # 打印验证结果摘要
-        print(f"\nValidation Summary:")
-        print(f"  Loss: {loss_avg:.4f}")
-        print(f"  mIoU: {np.nanmean(cw_iou):.3f}")
-        print(f"  mAcc: {np.nanmean(cw_acc):.3f}")
-        print(f"  Class IoUs: {[f'{iou:.3f}' for iou in cw_iou]}")
 
         return loss_avg
 
@@ -620,7 +596,6 @@ def train_single(nets, net_opts, g):
 
     criterion = torch.nn.CrossEntropyLoss(reduction="mean", ignore_index=ignore_idx,
                                           weight=class_weights)
-    
     trainloader = data.DataLoader(
         train_dataset,
         batch_size=g.batch_size,
@@ -642,33 +617,17 @@ def train_single(nets, net_opts, g):
     writer = SummaryWriter(log_dir=os.path.join(output))
     tfu.log_dict(writer, 'global_args', g, 0)
 
-    # 打印训练配置信息
-    print("\n" + "="*50)
-    print("Training Configuration:")
-    print(f"  Output directory: {output}")
-    print(f"  Epochs: {g.epochs}")
-    print(f"  Batch size: {g.batch_size}")
-    print(f"  Learning rate: {g.lr}")
-    print(f"  Number of classes: {g.num_class}")
-    if hasattr(g, 'progressive_deformable') and g.progressive_deformable:
-        print(f"  Progressive Deformable: Enabled (warmup: {getattr(g, 'warmup_epochs', 3)} epochs)")
-    if hasattr(g, 'progressive_layers') and g.progressive_layers:
-        print(f"  Progressive Layers: Enabled (encoder-only: {getattr(g, 'encoder_only_epochs', 2)} epochs)")
-    print("="*50 + "\n")
-
     best_valid_loss = np.inf
-    best_valid_iou = 0.0
 
     resume_epoch = 0
     if g.resume:
         save_epoch = _load_model(g.resume, nets, net_opts, False)
-        print(f'Loaded checkpoint from {g.resume}, epoch {save_epoch}')
+        print('loaded', g.resume, 'epoch', save_epoch)
         if g.resume_epoch >= 0:
             resume_epoch = g.resume_epoch
         else:
             resume_epoch = save_epoch
 
-    # 创建学习率调度器
     net_scheds = {
         name: torch.optim.lr_scheduler.StepLR(
             opt,
@@ -678,44 +637,23 @@ def train_single(nets, net_opts, g):
         for name, opt in net_opts.items()
     }
 
-    # 主训练循环
     for epoch in range(1, g.epochs + 1):
         if resume_epoch < epoch:
-            print(f"\n{'='*20} Epoch {epoch}/{g.epochs} {'='*20}")
-            
-            # 训练
-            train_losses = train(nets, net_opts, trainloader, criterion, epoch, writer, g.train_device)
-            avg_train_loss = np.mean(train_losses) if train_losses else 0
-            print(f"Average training loss: {avg_train_loss:.4f}")
-            
-            # 保存checkpoint
-            _save_model(nets, net_opts, epoch, g, os.path.join(output, f'model.pth.{epoch}'))
+            train(nets, net_opts, trainloader, criterion, epoch, writer, g.train_device)
+            _save_model(nets, net_opts, epoch, g, os.path.join(output, 'model.pth'))
 
-            # 验证
             n_iter = epoch * len(trainloader)
             val_loss = validate(nets, validloader, criterion, n_iter, writer, g.train_device)
 
-            # 保存最佳模型
             if val_loss < best_valid_loss:
-                print(f"New best validation loss: {val_loss:.4f} (previous: {best_valid_loss:.4f})")
+                print("new best valid loss at %3f, saving model..." % val_loss)
                 best_valid_loss = val_loss
                 _save_model(nets, net_opts, epoch, g, os.path.join(output, 'best.pth'))
-                
-                # 也保存一份带epoch信息的最佳模型
-                _save_model(nets, net_opts, epoch, g, os.path.join(output, f'best_epoch{epoch}.pth'))
 
-        # 更新学习率（如果使用默认的StepLR）
-        if not (hasattr(g, 'lr_schedule') and g.lr_schedule == 'warmup_cosine'):
-            for _, sched in net_scheds.items():
-                sched.step()
+        for _, sched in net_scheds.items():
+            sched.step()
 
     writer.close()
-    
-    print("\n" + "="*50)
-    print("Training completed!")
-    print(f"Best validation loss: {best_valid_loss:.4f}")
-    print(f"Model saved to: {output}")
-    print("="*50)
 
 def train_recurrent(nets, net_opts, g):
     def forward_nets(nets, x):
